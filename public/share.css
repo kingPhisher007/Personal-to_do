@@ -1,0 +1,33 @@
+.wrap { max-width: 640px; margin: 0 auto; padding: 28px 18px 60px; }
+.brand { display: inline-flex; align-items: center; gap: 10px; margin-bottom: 22px; color: var(--text); text-decoration: none; font-size: 18px; font-weight: 650; letter-spacing: -.02em; }
+.card { padding: 22px; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); }
+.card h1 { margin: 0 0 16px; font-size: 22px; font-weight: 650; letter-spacing: -.02em; }
+.gone p { margin: 0; color: var(--muted); }
+.muted { color: var(--muted); }
+
+.block-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; color: var(--muted); font-size: 13.5px; }
+.txt {
+  margin: 0; padding: 14px; max-height: 60vh; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere;
+  font-family: var(--font); font-size: 15px; line-height: 1.6; background: var(--inset); border: 1px solid var(--line-soft); border-radius: 10px;
+}
+.url {
+  display: block; padding: 14px; overflow-wrap: anywhere; color: var(--accent); text-decoration: none;
+  font-family: var(--mono); font-size: 13.5px; background: var(--inset); border: 1px solid var(--line-soft); border-radius: 10px;
+}
+.url:hover { border-color: var(--accent); }
+
+.files { display: grid; gap: 12px; margin-top: 16px; }
+.file { overflow: hidden; background: var(--inset); border: 1px solid var(--line-soft); border-radius: 12px; }
+.pic img { display: block; width: 100%; max-height: 420px; object-fit: contain; background: rgba(0, 0, 0, .2); }
+.file-row { display: flex; align-items: center; gap: 12px; padding: 10px 12px; }
+.file-meta { flex: 1; min-width: 0; }
+.file-meta b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.file-meta small { color: var(--muted); }
+
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; padding: 7px 14px; border-radius: 10px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--raised); color: var(--text); font-weight: 500; text-decoration: none;
+}
+.btn:hover { border-color: var(--accent); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.expiry { margin: 14px 0 0; text-align: center; color: var(--muted); font-size: 13.5px; }

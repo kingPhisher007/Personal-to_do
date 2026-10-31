@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Clipboard</title>
+  <meta name="theme-color" content="#0f1420">
+  <meta name="description" content="Your personal cloud clipboard and to-do list.">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+  <script src="/theme.js"></script>
+  <link rel="stylesheet" href="/tokens.css">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+
+  <main id="login" class="login hidden">
+    <form id="loginForm" class="login-card">
+      <div class="login-brand">
+        <svg viewBox="0 0 128 128" width="34" height="34" aria-hidden="true"><use href="/icons/icon.svg#m"/></svg>
+        <h1>Clipboard</h1>
+      </div>
+      <p class="login-sub">Log in to see what you saved.</p>
+      <label class="field"><span>Username</span>
+        <input id="u" type="text" autocomplete="username" autocapitalize="off" spellcheck="false" required></label>
+      <label class="field"><span>Password</span>
+        <input id="p" type="password" autocomplete="current-password" required></label>
+      <p id="loginErr" class="login-err" role="alert"></p>
+      <button class="btn primary wide" type="submit">Log in</button>
+    </form>
+  </main>
+
+  <div id="app" class="shell hidden">
+    <aside class="rail">
+      <div class="brand">
+        <svg viewBox="0 0 128 128" width="28" height="28" aria-hidden="true"><use href="/icons/icon.svg#m"/></svg>
+        <span>Clipboard</span>
+      </div>
+      <nav id="nav" class="nav" aria-label="Views"></nav>
+      <div class="rail-foot">
+        <div class="live" id="live" role="status"><i></i><span>Connecting</span></div>
+        <div class="rail-actions">
+          <button class="icon-btn" id="themeBtn" type="button" aria-label="Switch theme" title="Switch theme"></button>
+          <button class="icon-btn hidden" id="installBtn" type="button" aria-label="Install app" title="Install app"></button>
+          <button class="icon-btn" id="logoutBtn" type="button" aria-label="Log out" title="Log out"></button>
+        </div>
+      </div>
+    </aside>
+
+    <section class="main">
+      <button class="search-btn" id="searchBtn" type="button">
+        <span class="search-ic" id="searchIc"></span>
+        <span class="search-txt">Search or run a command</span>
+        <kbd id="kbdHint">Ctrl K</kbd>
+      </button>
+
+      <form id="composer" class="composer" autocomplete="off">
+        <textarea id="newText" rows="1" placeholder="Paste, type, or drop a file here" aria-label="New entry"></textarea>
+        <div class="c-row">
+          <button class="chip-btn" id="attachBtn" type="button" title="Attach files"></button>
+          <button class="chip-btn toggle" id="taskBtn" type="button" role="switch" aria-checked="false" title="Make this a task"></button>
+          <span class="spacer"></span>
+          <div class="fuse-pick" id="fusePick" role="radiogroup" aria-label="Delete after"></div>
+          <button class="btn primary" type="submit" id="addBtn">Save</button>
+        </div>
+      </form>
+
+      <div id="feed" class="feed"></div>
+      <div id="empty" class="empty hidden"></div>
+    </section>
+  </div>
+
+  <input type="file" id="picker" multiple class="hidden">
+
+  <dialog id="dlgPalette" class="dlg palette" aria-label="Search and commands"></dialog>
+  <dialog id="dlgShare" class="dlg share" aria-label="Share a link"></dialog>
+  <dialog id="dlgLight" class="dlg light" aria-label="Image preview"></dialog>
+
+  <div id="menuHost"></div>
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+  <div id="veil" class="veil hidden"><div><b>Drop to save</b><span>Drop on an entry to attach, or anywhere else for a new one</span></div></div>
+
+  <script src="/app.js" defer></script>
+</body>
+</html>
