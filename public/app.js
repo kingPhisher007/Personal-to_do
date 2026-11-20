@@ -31,6 +31,10 @@
     left: '<polyline points="15 18 9 12 15 6"/>',
     right: '<polyline points="9 18 15 12 9 6"/>',
     more: '<circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>',
+    pin: '<line x1="12" x2="12" y1="17" y2="22"/><path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"/>',
+    undo: '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>',
+    database: '<ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5"/><path d="M3 12a9 3 0 0 0 18 0"/>',
+    upload: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/>',
     infinity: '<path d="M18.178 8c5.096 0 5.096 8 0 8-5.095 0-7.133-8-12.739-8-4.585 0-4.585 8 0 8 5.606 0 7.644-8 12.74-8z"/>',
   };
 
@@ -80,6 +84,10 @@
 
   const S = {
     items: [],
+    trash: [],
+    trashDays: 30,
+    info: null,
+    backup: null,
     offset: 0,
     loaded: false,
     view: store.get('view', 'all'),
@@ -156,11 +164,15 @@
 
   const VIEWS = [
     { id: 'all', label: 'All', icon: 'inbox', test: () => true, empty: ['Nothing saved yet', `Paste text, drop a file, or press ${MOD} K to run a command.`] },
+    { id: 'pinned', label: 'Pinned', icon: 'pin', test: (i) => !!i.pinned_at, empty: ['Nothing pinned', 'Pin an entry to keep it at the top. Pinned entries never auto-delete.'] },
     { id: 'tasks', label: 'Tasks', icon: 'tasks', test: (i) => i.is_task, empty: ['No tasks', 'Switch on Task in the box above, then save one.'] },
     { id: 'links', label: 'Links', icon: 'link', test: (i) => kindOf(i) === 'link', empty: ['No links', 'Paste a web address and it shows up here.'] },
     { id: 'code', label: 'Code', icon: 'code', test: (i) => kindOf(i) === 'code', empty: ['No code', 'Snippets and shell commands you paste land here.'] },
     { id: 'files', label: 'Files', icon: 'file', test: (i) => i.files.length > 0, empty: ['No files', 'Paste a screenshot or drop a file anywhere on the page.'] },
   ];
+
+  const TRASH_VIEW = { id: 'trash', label: 'Trash', icon: 'trash', empty: ['Trash is empty', 'Entries you delete wait here, so you can get them back.'] };
+  if (S.view !== 'trash' && !VIEWS.some((v) => v.id === S.view)) S.view = 'all';
 
   /* ================= formatting ================= */
   function fmtAgo(ts) {
@@ -185,7 +197,8 @@
   /* ================= toast, menu ================= */
   function toast(msg, o = {}) {
     const prog = o.progress ? h('div', { class: 'prog' }, h('i')) : null;
-    const t = h('div', { class: 'toast' + (o.err ? ' err' : '') + (o.sticky ? ' sticky' : ''), role: o.err ? 'alert' : 'status' }, msg, prog);
+    const act = o.action ? h('button', { type: 'button', onclick: () => { close(); o.action.run(); } }, o.action.label) : null;
+    const t = h('div', { class: 'toast' + (o.err ? ' err' : '') + (o.sticky ? ' sticky' : ''), role: o.err ? 'alert' : 'status' }, msg, prog, act);
     for (const old of document.querySelectorAll('#toasts .toast:not(.sticky)')) old.remove(); // one message at a time
     $('#toasts').append(t);
     let timer = null;
@@ -241,11 +254,12 @@
     return data;
   }
 
-  function upload(path, fd, onProgress) {
+  function upload(path, fd, onProgress, contentType) {
     return new Promise((resolve, reject) => {
       const x = new XMLHttpRequest();
       x.open('POST', path);
       x.withCredentials = true;
+      if (contentType) x.setRequestHeader('Content-Type', contentType);
       x.upload.onprogress = (e) => { if (e.lengthComputable && onProgress) onProgress(e.loaded / e.total); };
       x.onload = () => {
         let d = {};
@@ -278,6 +292,8 @@
       const d = await api('/api/items');
       S.offset = Date.parse(d.now) - Date.now();
       S.items = d.items;
+      S.trash = d.trash || [];
+      S.trashDays = d.trash_days || 30;
       S.loaded = true;
       render();
       S.flash = true; // from now on, entries that arrive get the "new" highlight (not the first load)
@@ -327,6 +343,7 @@
     try {
       const it = await api('/api/items', { method: 'POST', body: { text, is_task, ttl: ttlValue() } });
       if (!S.items.some((x) => x.id === it.id)) S.items.unshift(it);
+      if (S.view === 'trash') setView('all');
       render();
       scheduleRefresh();
       return it;
@@ -358,6 +375,7 @@
       if (text) { ta.value = ''; autosize(); }
       t.close();
       toast('Saved');
+      if (S.view === 'trash') setView('all');
       scheduleRefresh();
     } catch (e) { t.close(); fail(e); }
   }
@@ -384,12 +402,62 @@
     } catch (e) { fail(e); scheduleRefresh(); }
   }
 
-  async function deleteItem(id) {
-    const prev = S.items;
+  // Delete moves an entry to the trash (with Undo). Entries on an auto-delete timer still vanish for good when it runs out.
+  async function trashItem(id) {
+    const it = S.items.find((x) => x.id === id);
+    if (!it) return;
     S.items = S.items.filter((x) => x.id !== id);
+    S.trash.unshift({ ...it, trashed_at: new Date(nowMs()).toISOString(), expires_at: null, ttl_seconds: null, shares: [] });
     render();
-    try { await api(`/api/items/${id}`, { method: 'DELETE' }); scheduleRefresh(); }
-    catch (e) { S.items = prev; render(); fail(e); }
+    try {
+      await api(`/api/items/${id}`, { method: 'DELETE' });
+      toast('Moved to trash', { ms: 6000, action: { label: 'Undo', run: () => restoreItem(id) } });
+      scheduleRefresh();
+    } catch (e) { fail(e); scheduleRefresh(); }
+  }
+
+  async function restoreItem(id) {
+    const it = S.trash.find((x) => x.id === id);
+    if (it) {
+      S.trash = S.trash.filter((x) => x.id !== id);
+      S.items = [{ ...it, trashed_at: null }, ...S.items].sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at) || b.id - a.id);
+      render();
+    }
+    try {
+      await api(`/api/items/${id}/restore`, { method: 'POST' });
+      toast('Restored');
+      scheduleRefresh();
+    } catch (e) { fail(e); scheduleRefresh(); }
+  }
+
+  async function deleteForever(id) {
+    S.trash = S.trash.filter((x) => x.id !== id);
+    render();
+    try { await api(`/api/items/${id}/forever`, { method: 'DELETE' }); scheduleRefresh(); }
+    catch (e) { fail(e); scheduleRefresh(); }
+  }
+
+  async function emptyTrash() {
+    const prev = S.trash;
+    S.trash = [];
+    render();
+    try { await api('/api/trash', { method: 'DELETE' }); toast('Trash emptied'); scheduleRefresh(); }
+    catch (e) { S.trash = prev; render(); fail(e); }
+  }
+
+  // Pinning keeps an entry at the top and switches its auto-delete timer off.
+  async function togglePin(it) {
+    const pin = !it.pinned_at;
+    const hadFuse = !!it.expires_at;
+    if (pin) { it.pinned_at = new Date(nowMs()).toISOString(); it.expires_at = null; it.ttl_seconds = null; } else it.pinned_at = null;
+    render();
+    try {
+      const row = await api(`/api/items/${it.id}`, { method: 'PATCH', body: { pinned: pin } });
+      Object.assign(it, row);
+      render();
+      toast(pin ? (hadFuse ? 'Pinned. Auto-delete is off for this entry' : 'Pinned') : 'Unpinned');
+      scheduleRefresh();
+    } catch (e) { fail(e); scheduleRefresh(); }
   }
 
   async function removeFile(it, f) {
@@ -437,9 +505,10 @@
   /* ================= auth views ================= */
   function showLogin() {
     if (S.es) { S.es.close(); S.es = null; }
-    S.items = []; S.loaded = false; S.flash = false;
+    S.items = []; S.trash = []; S.info = null; S.loaded = false; S.flash = false;
     known.clear();
     $('#feed').replaceChildren();
+    $('#shelf').replaceChildren();
     $('#app').classList.add('hidden');
     $('#login').classList.remove('hidden');
     for (const d of document.querySelectorAll('dialog[open]')) d.close();
@@ -451,7 +520,9 @@
     render();
     refresh();
     connectEvents();
+    loadBackupInfo();
   }
+  setInterval(() => { if (!document.hidden && !$('#app').classList.contains('hidden')) loadBackupInfo(); }, 30 * 60 * 1000);
 
   $('#loginForm').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -470,7 +541,7 @@
     document.documentElement.dataset.theme = t;
     store.set('theme', t);
     const m = $('meta[name="theme-color"]');
-    if (m) m.content = t === 'light' ? '#f3f5f9' : '#0f1420';
+    if (m) m.content = t === 'light' ? '#eff3f1' : '#0a1315';
     $('#themeBtn').replaceChildren(icon(t === 'light' ? 'moon' : 'sun'));
     $('#themeBtn').title = t === 'light' ? 'Switch to dark theme' : 'Switch to light theme';
   }
@@ -478,7 +549,25 @@
   $('#themeBtn').addEventListener('click', toggleTheme);
 
   /* ================= rendering ================= */
-  const visible = () => S.items.filter(VIEWS.find((v) => v.id === S.view).test);
+  /* ================= rendering ================= */
+  const findItem = (id) => S.items.find((x) => x.id === id) || S.trash.find((x) => x.id === id);
+  const inTrash = () => S.view === 'trash';
+  const currentView = () => VIEWS.find((v) => v.id === S.view) || VIEWS[0];
+  const byPinned = (a, b) => Date.parse(b.pinned_at) - Date.parse(a.pinned_at);
+
+  function viewItems() {
+    if (inTrash()) return S.trash;
+    const list = S.items.filter(currentView().test);
+    return S.view === 'pinned' ? list.sort(byPinned) : list;
+  }
+  const visible = viewItems;
+
+  // Pinned entries sit on a shelf above the log. The Pinned tab and the Trash list the entries in full.
+  function split() {
+    const all = viewItems();
+    if (inTrash() || S.view === 'pinned') return { pinned: [], rest: all };
+    return { pinned: all.filter((i) => i.pinned_at).sort(byPinned), rest: all.filter((i) => !i.pinned_at) };
+  }
 
   function setView(id) {
     S.view = id;
@@ -490,41 +579,56 @@
   let navKey = '';
   function renderNav() {
     const counts = VIEWS.map((v) => S.items.filter(v.test).length);
-    const key = S.view + counts.join(',');
+    const key = S.view + counts.join(',') + ':' + S.trash.length;
     if (key === navKey) return;
     navKey = key;
-    $('#nav').replaceChildren(...VIEWS.map((v, i) =>
-      h('button', { type: 'button', 'aria-current': String(S.view === v.id), onclick: () => setView(v.id) },
-        icon(v.icon), h('span', { class: 'label' }, v.label), h('span', { class: 'count' }, counts[i]))));
+    const tab = (id, label, ic, count, cls) =>
+      h('button', { type: 'button', class: cls, 'aria-current': String(S.view === id), onclick: () => setView(id) },
+        icon(ic), h('span', { class: 'label' }, label), count ? h('span', { class: 'count' }, count) : null);
+    $('#nav').replaceChildren(
+      ...VIEWS.map((v, i) => tab(v.id, v.label, v.icon, counts[i])),
+      tab('trash', 'Trash', 'trash', S.trash.length, 'tab-trash'));
+  }
+
+  let barKey = '';
+  function renderViewbar() {
+    const bar = $('#viewbar');
+    if (!inTrash()) { bar.classList.add('hidden'); barKey = ''; return; }
+    bar.classList.remove('hidden');
+    const key = `${S.trash.length}:${S.trashDays}`;
+    if (key === barKey) return;
+    barKey = key;
+    bar.replaceChildren(
+      h('p', {}, `Deleted entries wait here for ${S.trashDays} days, then are removed for good. Entries on an auto-delete timer skip the trash.`),
+      S.trash.length ? arm(h('button', { type: 'button', class: 'btn sm danger' }, 'Empty trash'), emptyTrash, 'Empty it now?') : null);
   }
 
   const known = new Set();
-  function signature(it) {
+  function signature(it, mode) {
     return JSON.stringify([
-      it.text, it.done, it.is_task, it.expires_at, it.ttl_seconds,
+      mode, it.text, it.done, it.is_task, it.pinned_at, it.trashed_at, it.expires_at, it.ttl_seconds,
       it.files.map((f) => f.id + f.name), it.shares.map((s) => s.token),
       S.edit && S.edit.id === it.id ? 'edit' : '',
     ]);
   }
 
-  function renderFeed(items) {
-    const feed = $('#feed');
+  function renderList(container, items, mode) {
     const existing = new Map();
-    for (const el of feed.children) existing.set(Number(el.dataset.id), el);
+    for (const el of container.children) existing.set(Number(el.dataset.id), el);
     let prev = null;
     for (const it of items) {
       let el = existing.get(it.id);
-      const sig = signature(it);
+      const sig = signature(it, mode);
       if (!el || el._sig !== sig) {
-        const fresh = buildEntry(it);
+        const fresh = buildEntry(it, mode);
         fresh._sig = sig;
-        if (el) feed.replaceChild(fresh, el);
-        else if (S.flash && !known.has(it.id)) fresh.classList.add('fresh');
+        if (el) container.replaceChild(fresh, el);
+        else if (S.flash && mode !== 'trash' && !known.has(it.id)) fresh.classList.add('fresh');
         el = fresh;
       }
       existing.delete(it.id);
-      const ref = prev ? prev.nextElementSibling : feed.firstElementChild;
-      if (ref !== el) feed.insertBefore(el, ref);
+      const ref = prev ? prev.nextElementSibling : container.firstElementChild;
+      if (ref !== el) container.insertBefore(el, ref);
       prev = el;
       known.add(it.id);
     }
@@ -534,16 +638,22 @@
   function renderEmpty(count) {
     const e = $('#empty');
     if (count || !S.loaded) { e.classList.add('hidden'); return; }
-    const v = VIEWS.find((x) => x.id === S.view);
+    const v = inTrash() ? TRASH_VIEW : currentView();
     e.replaceChildren(icon(v.icon), h('h2', {}, v.empty[0]), h('p', {}, v.empty[1]));
     e.classList.remove('hidden');
   }
 
   function render() {
-    const items = visible();
+    const { pinned, rest } = split();
+    $('#main').classList.toggle('is-trash', inTrash());
     renderNav();
-    renderFeed(items);
-    renderEmpty(items.length);
+    renderViewbar();
+    $('#shelfWrap').classList.toggle('hidden', !pinned.length);
+    if (pinned.length) $('#shelfTitle').replaceChildren(icon('pin'), 'Pinned');
+    renderList($('#shelf'), pinned, 'tile');
+    $('#feedTitle').classList.toggle('hidden', !(pinned.length && rest.length));
+    renderList($('#feed'), rest, inTrash() ? 'trash' : 'row');
+    renderEmpty(pinned.length + rest.length);
   }
 
   function iconBtn(name, label, onclick, cls = '') {
@@ -571,31 +681,37 @@
     return btn;
   }
 
-  function buildActions(it, kind) {
+
+  function buildActions(it, kind, mode) {
+    if (mode === 'trash') {
+      return h('div', { class: 'actions' },
+        h('button', { type: 'button', class: 'btn sm', onclick: () => restoreItem(it.id) }, icon('undo', 'sm'), 'Restore'),
+        arm(h('button', { type: 'button', class: 'btn sm danger' }, icon('trash', 'sm'), 'Delete forever'), () => deleteForever(it.id), 'Really delete?'));
+    }
     const a = h('div', { class: 'actions' });
     const text = it.text.trim();
     const imgs = it.files.filter(isImage);
     const attach = () => { S.pickTarget = it.id; $('#picker').click(); };
+    const pinned = !!it.pinned_at;
 
     // Wide screens: individual buttons that appear on hover. Copy sits last so it never moves.
     a.append(
-      arm(iconBtn('trash', 'Delete', () => {}, 'danger act-more'), () => deleteItem(it.id)),
+      iconBtn('trash', 'Move to trash', () => trashItem(it.id), 'danger act-more'),
       iconBtn('pencil', 'Edit', () => startEdit(it), 'act-more'),
       iconBtn('clip', 'Attach files', attach, 'act-more'),
       iconBtn('clock', 'Change auto-delete', (e) => openExpiryMenu(e.currentTarget, it), 'act-more' + (it.expires_at ? ' on' : '')),
       iconBtn('share', 'Share a link', () => openShare(it.id), 'act-more'),
+      iconBtn('pin', pinned ? 'Unpin' : 'Pin to top', () => togglePin(it), 'act-more' + (pinned ? ' pinned' : '')),
     );
 
     // Phones and touch screens: one menu button instead.
     const more = iconBtn('more', 'More actions', () => openMenu(more, null, [
+      { label: pinned ? 'Unpin' : 'Pin to top', icon: 'pin', onSelect: () => togglePin(it) },
       { label: 'Share a link', icon: 'share', onSelect: () => openShare(it.id) },
       { label: 'Auto-delete…', icon: 'clock', onSelect: () => openExpiryMenu(more, it) },
       { label: 'Attach files', icon: 'clip', onSelect: attach },
       { label: 'Edit', icon: 'pencil', onSelect: () => startEdit(it) },
-      { label: 'Delete…', icon: 'trash', onSelect: () => openMenu(more, 'Delete this entry?', [
-        { label: 'Delete', icon: 'trash', onSelect: () => deleteItem(it.id) },
-        { label: 'Keep it', icon: 'x', onSelect: () => {} },
-      ]) },
+      { label: 'Move to trash', icon: 'trash', onSelect: () => trashItem(it.id) },
     ]), 'act-menu');
     a.append(more);
 
@@ -604,26 +720,49 @@
     return a;
   }
 
-  function buildEntry(it) {
+  // mode: 'row' (the log), 'tile' (pinned shelf) or 'trash'
+  function buildEntry(it, mode) {
     const kind = kindOf(it);
-    const editing = S.edit && S.edit.id === it.id;
-    const root = h('article', { class: 'entry' + (it.is_task && it.done ? ' done' : ''), dataset: { id: it.id, kind } });
+    const tile = mode === 'tile';
+    const trash = mode === 'trash';
+    const editing = !trash && S.edit && S.edit.id === it.id;
+    const copyable = tile && !editing && ['text', 'code', 'link'].includes(kind) && !!it.text.trim();
+    const root = h('article', {
+      class: ['entry', tile && 'tile', trash && 'trashed', it.pinned_at && !trash && 'is-pinned', it.is_task && it.done && 'done', editing && 'editing', copyable && 'copyable'].filter(Boolean).join(' '),
+      dataset: { id: it.id, kind },
+    });
     if (it.expires_at) {
       const total = it.ttl_seconds ? it.ttl_seconds * 1000 : Date.parse(it.expires_at) - Date.parse(it.created_at);
       root.dataset.exp = Date.parse(it.expires_at);
       root.dataset.total = total;
       root.append(h('div', { class: 'fuse' }, h('i')));
     }
-    const head = h('div', { class: 'e-head' },
-      h('span', { class: 'lead' }, icon(KIND_ICON[kind])),
-      h('span', { class: 'ago', dataset: { ts: it.created_at } }, fmtAgo(it.created_at)),
-      it.expires_at ? h('span', { class: 'pill' }, icon('clock', 'sm'), h('span', { class: 'pill-t' })) : null,
-      buildActions(it, kind));
-    root.append(head);
 
-    if (editing) root.append(buildEditor(it));
-    else root.append(...buildBody(it, kind));
-    if (it.files.length) root.append(...buildFiles(it));
+    let goneIn = null;
+    if (trash && it.trashed_at) {
+      const left = Date.parse(it.trashed_at) + S.trashDays * 864e5 - nowMs();
+      goneIn = h('span', { class: 'pill' }, icon('clock', 'sm'), left > 864e5 ? `Gone in ${Math.ceil(left / 864e5)} days` : 'Gone within a day');
+    }
+    const time = h('div', { class: 'e-time' },
+      h('span', { class: 'lead' }, icon(it.pinned_at && !trash ? 'pin' : KIND_ICON[kind])),
+      h('span', { class: 'ago', dataset: { ts: trash ? it.trashed_at : it.created_at, pre: trash ? 'Deleted ' : '' } },
+        (trash ? 'Deleted ' : '') + fmtAgo(trash ? it.trashed_at : it.created_at)),
+      it.expires_at ? h('span', { class: 'pill' }, icon('clock', 'sm'), h('span', { class: 'pill-t' })) : null,
+      goneIn);
+
+    const main = h('div', { class: 'e-main' });
+    if (editing) main.append(buildEditor(it));
+    else main.append(...buildBody(it, kind));
+    if (it.files.length) main.append(...buildFiles(it, trash));
+    if (copyable) {
+      main.title = 'Click to copy';
+      main.addEventListener('click', (e) => {
+        if (e.target.closest('a, button, textarea, input') || String(window.getSelection()).length) return;
+        copyText(copyPayload(it));
+      });
+    }
+
+    root.append(time, main, buildActions(it, kind, mode));
     if (it.expires_at) paintFuse(root, nowMs());
     return root;
   }
@@ -666,17 +805,17 @@
     return text.trim() ? textBlock(text) : [];
   }
 
-  function buildFiles(it) {
+  function buildFiles(it, readonly) {
     const out = [];
     const imgs = it.files.filter(isImage);
     const others = it.files.filter((f) => !isImage(f));
     if (imgs.length) {
       const grid = h('div', { class: 'thumbs' + (imgs.length === 1 ? ' one' : '') });
       imgs.forEach((f, idx) => {
-        const x = arm(h('button', { type: 'button', class: 'x', 'aria-label': 'Remove image', title: 'Remove image' }, icon('x', 'sm')), () => removeFile(it, f), 'Remove?');
+        const x = readonly ? null : arm(h('button', { type: 'button', class: 'x', 'aria-label': 'Remove image', title: 'Remove image' }, icon('x', 'sm')), () => removeFile(it, f), 'Remove?');
         grid.append(h('div', {
           class: 'thumb', role: 'button', tabindex: '0', 'aria-label': `Preview ${f.name}`,
-          onclick: () => openLight(it.id, idx),
+          onclick: (e) => { e.stopPropagation(); openLight(it.id, idx); },
           onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openLight(it.id, idx); } },
         }, h('img', { src: `/api/files/${f.id}`, alt: f.name, loading: 'lazy' }), x));
       });
@@ -689,8 +828,8 @@
           h('div', { class: 'ext' }, ext),
           h('div', { class: 'fname' }, h('b', { title: f.name }, f.name), h('small', {}, fmtSize(f.size))),
           h('a', { class: 'icon-btn', href: `/api/files/${f.id}?download=1`, download: f.name, 'aria-label': `Download ${f.name}`, title: 'Download' }, icon('download')),
-          iconBtn('share', 'Share this file', () => openShare(it.id, f.id)),
-          arm(iconBtn('x', 'Remove file', () => {}, 'danger'), () => removeFile(it, f), 'Remove?'));
+          readonly ? null : iconBtn('share', 'Share this file', () => openShare(it.id, f.id)),
+          readonly ? null : arm(iconBtn('x', 'Remove file', () => {}, 'danger'), () => removeFile(it, f), 'Remove?'));
       })));
     }
     return out;
@@ -774,7 +913,7 @@
     if (document.hidden) return;
     for (const el of document.querySelectorAll('.entry[data-exp]')) paintFuse(el, now);
     for (const el of document.querySelectorAll('.ago')) {
-      const t = fmtAgo(el.dataset.ts);
+      const t = (el.dataset.pre || '') + fmtAgo(el.dataset.ts);
       if (el.textContent !== t) el.textContent = t;
     }
     for (const el of document.querySelectorAll('.exp-left')) {
@@ -870,6 +1009,7 @@
     const files = [...e.dataTransfer.files];
     if (!files.length) return;
     const entry = e.target.closest && e.target.closest('.entry');
+    if (entry && entry.classList.contains('trashed')) { toast('Restore this entry first to add files', { err: true }); return; }
     if (entry) attachFiles(Number(entry.dataset.id), files); else captureFiles(files);
   });
 
@@ -972,7 +1112,7 @@
 
   function renderLight() {
     const dlg = $('#dlgLight');
-    const it = S.light && S.items.find((x) => x.id === S.light.id);
+    const it = S.light && findItem(S.light.id);
     const imgs = it ? it.files.filter(isImage) : [];
     if (!imgs.length) { if (dlg.open) dlg.close(); return; }
     S.light.idx = Math.max(0, Math.min(S.light.idx, imgs.length - 1));
@@ -993,7 +1133,7 @@
   $('#dlgLight').addEventListener('click', (e) => { if (e.target === e.currentTarget) e.currentTarget.close(); });
   $('#dlgLight').addEventListener('keydown', (e) => {
     if (!S.light) return;
-    const imgs = (S.items.find((x) => x.id === S.light.id)?.files || []).filter(isImage);
+    const imgs = (findItem(S.light.id)?.files || []).filter(isImage);
     if (imgs.length < 2) return;
     if (e.key === 'ArrowRight') { S.light.idx = (S.light.idx + 1) % imgs.length; renderLight(); }
     if (e.key === 'ArrowLeft') { S.light.idx = (S.light.idx - 1 + imgs.length) % imgs.length; renderLight(); }
@@ -1036,11 +1176,14 @@
     }
     const cmds = [
       ...VIEWS.map((v) => ({ group: 'Go to', icon: v.icon, label: v.label, run: () => setView(v.id) })),
+      { group: 'Go to', icon: 'trash', label: 'Trash', run: () => setView('trash') },
       ...TTL_LONG.map(([v, label]) => ({
         group: 'New entries', icon: v === 'keep' ? 'infinity' : 'clock',
         label: v === 'keep' ? 'Keep new entries forever' : `Delete new entries after ${label}`,
         hint: S.ttl === v ? 'Current' : '', run: () => { S.ttl = v; store.set('ttl', v); renderFusePick(); toast('Updated'); },
       })),
+      { group: 'App', icon: 'download', label: 'Download backup', run: downloadBackup },
+      { group: 'App', icon: 'upload', label: 'Restore from a backup file', run: openBackup },
       { group: 'App', icon: document.documentElement.dataset.theme === 'light' ? 'moon' : 'sun', label: 'Switch theme', run: toggleTheme },
       { group: 'App', icon: 'logout', label: 'Log out', run: () => $('#logoutBtn').click() },
     ];
@@ -1124,6 +1267,146 @@
     if (e.key === '/' && !typing(e.target) && !dialogOpen() && !e.ctrlKey && !e.metaKey) { e.preventDefault(); ta.focus(); }
   });
 
+  /* ================= backup and restore ================= */
+  const DAY = 864e5;
+  const daysSince = (iso, now) => (Date.parse(now) - Date.parse(iso)) / DAY;
+  const plural = (n, one, many) => `${n} ${n === 1 ? one : (many || one + 's')}`;
+  const agoText = (d) => (d < 1 ? 'today' : d < 2 ? 'yesterday' : `${Math.floor(d)} days ago`);
+
+  // free databases expire after about 30 days: nudge from day 23 unless a backup is recent
+  function needsBackup(info) {
+    if (!info || !info.db_created_at) return false;
+    const age = daysSince(info.db_created_at, info.now);
+    const since = info.last_backup_at ? daysSince(info.last_backup_at, info.now) : Infinity;
+    return age >= 23 && since > 5;
+  }
+
+  function paintBackupDot() {
+    const b = $('#backupBtn');
+    const dot = b.querySelector('.dot');
+    const want = needsBackup(S.info);
+    if (want && !dot) b.append(h('i', { class: 'dot' }));
+    if (!want && dot) dot.remove();
+    b.title = want ? 'Backup and restore. A backup is due' : 'Backup and restore';
+  }
+
+  async function loadBackupInfo() {
+    try { S.info = await api('/api/backup/info'); } catch { return; }
+    paintBackupDot();
+    if (S.backup) renderBackup();
+  }
+
+  function downloadBackup() {
+    const a = h('a', { href: '/api/backup', download: true });
+    document.body.append(a);
+    a.click();
+    a.remove();
+    toast('Preparing your backup. The download starts in a moment');
+    setTimeout(loadBackupInfo, 6000);
+    setTimeout(loadBackupInfo, 20000);
+  }
+
+  function openBackup() {
+    S.backup = { file: null, busy: false, progress: 0, result: null };
+    renderBackup();
+    const dlg = $('#dlgBackup');
+    if (!dlg.open) dlg.showModal();
+    loadBackupInfo();
+  }
+
+  function renderBackup() {
+    const st = S.backup;
+    if (!st) return;
+    const info = S.info;
+    const body = h('div', { class: 's-body' },
+      h('h2', {}, 'Backup and restore'),
+      h('p', { class: 'sub' }, 'Free Render databases expire after about 30 days. Download a backup first, set up the new database, then restore the file here.'));
+
+    if (info) {
+      const age = info.db_created_at ? daysSince(info.db_created_at, info.now) : null;
+      const last = info.last_backup_at ? daysSince(info.last_backup_at, info.now) : null;
+      if (needsBackup(info)) {
+        body.append(h('div', { class: 'b-warn', role: 'status' }, icon('clock'),
+          h('span', {}, `This database is ${plural(Math.floor(age), 'day')} old and ${last == null ? 'has never been backed up' : `was last backed up ${agoText(last)}`}. Download a backup now.`)));
+      }
+      body.append(
+        h('div', { class: 'b-stats' },
+          h('div', { class: 'b-stat' }, h('b', {}, info.items), h('span', {}, info.items === 1 ? 'entry' : 'entries')),
+          h('div', { class: 'b-stat' }, h('b', {}, info.files), h('span', {}, info.files === 1 ? 'file' : 'files')),
+          h('div', { class: 'b-stat' }, h('b', {}, fmtSize(info.bytes)), h('span', {}, 'file data'))),
+        h('p', { class: 'b-note' },
+          [age == null ? null : `Database set up ${agoText(age)}.`, last == null ? 'No backup downloaded yet.' : `Last backup ${agoText(last)}.`,
+            info.trashed ? `${plural(info.trashed, 'entry', 'entries')} in the trash.` : null].filter(Boolean).join(' ')));
+    }
+
+    body.append(h('div', { class: 'b-sec' },
+      h('h3', {}, 'Download a backup'),
+      h('p', {}, 'One file with every entry, file, pin, trashed entry and share link. Keep it somewhere safe.'),
+      h('button', { type: 'button', class: 'btn primary', onclick: downloadBackup }, icon('download', 'sm'), 'Download backup')));
+
+    const f = st.file;
+    body.append(h('div', { class: 'b-sec' },
+      h('h3', {}, 'Restore from a backup'),
+      h('p', {}, 'Restoring adds to what is already here. Entries that are already in this database are skipped, so it is safe to run twice.'),
+      h('div', { class: 'b-row' },
+        h('button', { type: 'button', class: 'btn', disabled: st.busy, onclick: () => $('#backupPicker').click() }, icon('upload', 'sm'), f ? 'Choose another file' : 'Choose backup file'),
+        f ? h('span', { class: 'b-file', title: f.name }, `${f.name} (${fmtSize(f.size)})`) : h('span', { class: 'b-file' }, 'No file chosen'),
+        h('button', { type: 'button', class: 'btn primary', disabled: !f || st.busy, onclick: restoreBackup }, st.busy ? (st.progress >= 1 ? 'Restoring…' : 'Uploading…') : 'Restore')),
+      st.busy ? h('div', { class: 'b-prog' }, h('i', { style: `width:${Math.round(st.progress * 100)}%` })) : null,
+      st.result ? h('p', { class: 'b-result' + (st.result.ok ? '' : ' err'), role: st.result.ok ? 'status' : 'alert' }, resultText(st.result)) : null));
+
+    body.append(h('div', { class: 's-actions' }, h('button', { type: 'button', class: 'btn', onclick: () => $('#dlgBackup').close() }, 'Done')));
+    $('#dlgBackup').replaceChildren(body);
+  }
+
+  function resultText(r) {
+    if (!r.ok) return r.error;
+    const a = r.added || {};
+    const s = r.skipped || {};
+    if (!a.items) return s.items ? `Nothing new to restore. All ${plural(s.items, 'entry', 'entries')} in this backup are already here.` : 'This backup has no entries to restore.';
+    const parts = [`Restored ${plural(a.items, 'entry', 'entries')} and ${plural(a.files, 'file')}.`];
+    if (s.items) parts.push(`${s.items} ${s.items === 1 ? 'was' : 'were'} already here.`);
+    if (s.expired) parts.push(`${s.expired} had already auto-deleted.`);
+    return parts.join(' ');
+  }
+
+  async function restoreBackup() {
+    const st = S.backup;
+    if (!st || !st.file || st.busy) return;
+    st.busy = true; st.progress = 0; st.result = null;
+    renderBackup();
+    try {
+      const r = await upload('/api/backup/import', st.file, (p) => {
+        st.progress = p;
+        const bar = document.querySelector('#dlgBackup .b-prog i');
+        if (bar) bar.style.width = `${Math.round(p * 100)}%`;
+        if (p >= 1) renderBackup();
+      }, 'application/octet-stream');
+      st.result = { ok: true, ...r };
+      st.file = null;
+      scheduleRefresh();
+      loadBackupInfo();
+    } catch (e) { st.result = { ok: false, error: e.message }; }
+    st.busy = false;
+    renderBackup();
+  }
+
+  $('#dlgBackup').addEventListener('close', () => { S.backup = null; });
+  $('#dlgBackup').addEventListener('click', (e) => { if (e.target === e.currentTarget && !(S.backup && S.backup.busy)) e.currentTarget.close(); });
+  $('#dlgBackup').addEventListener('cancel', (e) => { if (S.backup && S.backup.busy) e.preventDefault(); });
+  {
+    const bp = h('input', { type: 'file', id: 'backupPicker', class: 'hidden', accept: '.gz,.jsonl,.json,application/gzip' });
+    bp.addEventListener('change', () => {
+      const f = bp.files[0];
+      bp.value = '';
+      if (!f || !S.backup) return;
+      S.backup.file = f;
+      S.backup.result = null;
+      renderBackup();
+    });
+    document.body.append(bp);
+  }
+
   /* ================= install & service worker ================= */
   window.addEventListener('beforeinstallprompt', (e) => {
     e.preventDefault();
@@ -1146,6 +1429,8 @@
 
   /* ================= boot ================= */
   $('#logoutBtn').append(icon('logout'));
+  $('#backupBtn').append(icon('database'));
+  $('#backupBtn').addEventListener('click', openBackup);
   applyTheme(document.documentElement.dataset.theme === 'light' ? 'light' : 'dark');
   renderFusePick();
   renderTaskToggle();

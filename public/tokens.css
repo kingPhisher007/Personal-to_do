@@ -11,70 +11,80 @@
   font-display: swap;
 }
 
+/* Petrol (dark) and mint-grey (light). One accent, plus amber reserved for pins and timers. */
 :root,
 :root[data-theme='dark'] {
   color-scheme: dark;
-  --bg: #0f1420;
-  --rail: #0b1019;
-  --surface: #161d2d;
-  --raised: #1d2639;
-  --inset: #0c111b;
-  --line: #263049;
-  --line-soft: #1e2639;
-  --text: #e8ecf6;
-  --muted: #8b97b3;
-  --faint: #5d6985;
-  --accent: #6c8cff;
-  --accent-ink: #0b1226;
-  --accent-wash: rgba(108, 140, 255, 0.14);
-  --ok: #3ddba4;
-  --warn: #ffb02e;
-  --danger: #ff6464;
-  --shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+  --bg: #0a1315;
+  --rail: #0a1315;
+  --surface: #111e21;
+  --raised: #172629;
+  --inset: #0c171a;
+  --line: #243b3f;
+  --line-soft: #1b2e31;
+  --text: #e6f0ee;
+  --muted: #92aaa5;
+  --faint: #62807a;
+  --accent: #4fd1c0;
+  --accent-ink: #04201c;
+  --accent-wash: rgba(79, 209, 192, 0.12);
+  --pin: #f0b44a;
+  --pin-wash: rgba(240, 180, 74, 0.12);
+  --ok: #4fdc9e;
+  --warn: #f0b44a;
+  --danger: #ff7a72;
+  --danger-wash: rgba(255, 122, 114, 0.13);
+  --shadow: 0 18px 50px rgba(0, 0, 0, 0.5);
 }
 
 @media (prefers-color-scheme: light) {
   :root:not([data-theme]) {
     color-scheme: light;
-    --bg: #f3f5f9;
-    --rail: #e9edf4;
+    --bg: #eff3f1;
+    --rail: #eff3f1;
     --surface: #ffffff;
-    --raised: #f6f8fc;
-    --inset: #f1f4fa;
-    --line: #dce2ee;
-    --line-soft: #e8ecf4;
-    --text: #121828;
-    --muted: #566282;
-    --faint: #8893ad;
-    --accent: #3358f4;
+    --raised: #f6f9f8;
+    --inset: #e8efec;
+    --line: #d2ddd9;
+    --line-soft: #e1e9e6;
+    --text: #0e1c19;
+    --muted: #4b605b;
+    --faint: #7f938d;
+    --accent: #0b7a6e;
     --accent-ink: #ffffff;
-    --accent-wash: rgba(51, 88, 244, 0.1);
-    --ok: #0e9f6e;
-    --warn: #c97a00;
-    --danger: #d93636;
-    --shadow: 0 18px 50px rgba(30, 40, 80, 0.18);
+    --accent-wash: rgba(11, 122, 110, 0.09);
+    --pin: #b36b00;
+    --pin-wash: rgba(179, 107, 0, 0.1);
+    --ok: #0d8a5f;
+    --warn: #b36b00;
+    --danger: #c8352f;
+    --danger-wash: rgba(200, 53, 47, 0.09);
+    --shadow: 0 18px 50px rgba(14, 40, 34, 0.16);
   }
 }
 
 :root[data-theme='light'] {
   color-scheme: light;
-  --bg: #f3f5f9;
-  --rail: #e9edf4;
+  --bg: #eff3f1;
+  --rail: #eff3f1;
   --surface: #ffffff;
-  --raised: #f6f8fc;
-  --inset: #f1f4fa;
-  --line: #dce2ee;
-  --line-soft: #e8ecf4;
-  --text: #121828;
-  --muted: #566282;
-  --faint: #8893ad;
-  --accent: #3358f4;
+  --raised: #f6f9f8;
+  --inset: #e8efec;
+  --line: #d2ddd9;
+  --line-soft: #e1e9e6;
+  --text: #0e1c19;
+  --muted: #4b605b;
+  --faint: #7f938d;
+  --accent: #0b7a6e;
   --accent-ink: #ffffff;
-  --accent-wash: rgba(51, 88, 244, 0.1);
-  --ok: #0e9f6e;
-  --warn: #c97a00;
-  --danger: #d93636;
-  --shadow: 0 18px 50px rgba(30, 40, 80, 0.18);
+  --accent-wash: rgba(11, 122, 110, 0.09);
+  --pin: #b36b00;
+  --pin-wash: rgba(179, 107, 0, 0.1);
+  --ok: #0d8a5f;
+  --warn: #b36b00;
+  --danger: #c8352f;
+  --danger-wash: rgba(200, 53, 47, 0.09);
+  --shadow: 0 18px 50px rgba(14, 40, 34, 0.16);
 }
 
 :root {
@@ -95,7 +105,7 @@ body {
   color: var(--text);
   font-family: var(--font);
   font-size: 15px;
-  line-height: 1.5;
+  line-height: 1.55;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }

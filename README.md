@@ -13,6 +13,9 @@ One Node service serves both the app and the API, so you only deploy one thing t
 - **Smart entries.** Links show as link cards, code and shell commands get a monospace block with a Copy button, images get thumbnails and a preview, other files get download chips, and tasks get checkboxes.
 - **Command bar.** Press Ctrl K (Cmd K on Mac) to search, copy an entry, switch views, change the default auto-delete or save what you typed. Ctrl Enter saves the text as a note.
 - **Paste anywhere.** Ctrl V on the page saves text instantly. Pasted screenshots and dropped files upload as new entries, or attach to the entry you drop them on.
+- **Pins.** Pin an entry to keep it on a shelf at the top. Pinning switches its auto-delete timer off, so a pinned entry is never removed by accident.
+- **Trash.** Deleting an entry moves it to the Trash (with an Undo button). It can be restored for 30 days (`TRASH_DAYS`), then it is removed for good. Entries on an auto-delete timer skip the trash and are removed when the timer runs out.
+- **Backup and restore.** The database icon in the top bar downloads everything (entries, files, pins, trash, share links) as one file, and restores it into any database, including a brand new one. Restoring twice does not duplicate anything, and a damaged or cut-off file is rejected without changing anything. A dot appears on the icon once the database is about 23 days old and has no recent backup.
 - Light and dark themes, phone layout, search across text and file names.
 
 ## Run locally
@@ -39,7 +42,7 @@ To update later, push to GitHub and Render redeploys. Existing data is kept.
 
 ## Install on your phone
 
-Open your Render address in Chrome on Android, log in, then use the browser menu and choose **Install app** (or use the install button in the sidebar). After that, Clipboard appears in the Android share sheet.
+Open your Render address in Chrome on Android, log in, then use the browser menu and choose **Install app** (or use the install button in the top bar). After that, Clipboard appears in the Android share sheet.
 
 iPhone: Safari can add the page to the home screen, but iOS does not support share-to-web-app, so the share sheet feature is Android only.
 
@@ -53,6 +56,15 @@ Installing needs HTTPS, which Render provides.
 | `APP_USER`, `APP_PASSWORD` | Your login |
 | `SESSION_SECRET` | Long random string that signs your login cookie |
 | `MAX_FILE_MB` | Largest upload, default 10 |
+| `TRASH_DAYS` | Days deleted entries stay in the trash, default 30 |
+
+## When the free database expires
+
+1. Open the app, click the database icon, then **Download backup**.
+2. On Render, create a new Postgres database and put its connection string in `DATABASE_URL`. Redeploy so the tables are created.
+3. Log in, click the database icon, choose the backup file and click **Restore**.
+
+Files live in the backup too, so it can be large. Share links keep working as long as the app address stays the same.
 
 ## Notes
 

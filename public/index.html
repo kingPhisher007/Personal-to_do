@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Clipboard</title>
-  <meta name="theme-color" content="#0f1420">
+  <meta name="theme-color" content="#0a1315">
   <meta name="description" content="Your personal cloud clipboard and to-do list.">
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
@@ -32,29 +32,28 @@
   </main>
 
   <div id="app" class="shell hidden">
-    <aside class="rail">
-      <div class="brand">
-        <svg viewBox="0 0 128 128" width="28" height="28" aria-hidden="true"><use href="/icons/icon.svg#m"/></svg>
-        <span>Clipboard</span>
-      </div>
-      <nav id="nav" class="nav" aria-label="Views"></nav>
-      <div class="rail-foot">
-        <div class="live" id="live" role="status"><i></i><span>Connecting</span></div>
-        <div class="rail-actions">
+    <header class="top">
+      <div class="top-in">
+        <div class="brand">
+          <svg viewBox="0 0 128 128" width="26" height="26" aria-hidden="true"><use href="/icons/icon.svg#m"/></svg>
+          <span>Clipboard</span>
+        </div>
+        <button class="search-btn" id="searchBtn" type="button">
+          <span class="search-ic" id="searchIc"></span>
+          <span class="search-txt">Search or run a command</span>
+          <kbd id="kbdHint">Ctrl K</kbd>
+        </button>
+        <div class="top-actions">
+          <div class="live" id="live" role="status" title="Live sync"><i></i><span>Connecting</span></div>
+          <button class="icon-btn" id="backupBtn" type="button" aria-label="Backup and restore" title="Backup and restore"></button>
           <button class="icon-btn" id="themeBtn" type="button" aria-label="Switch theme" title="Switch theme"></button>
           <button class="icon-btn hidden" id="installBtn" type="button" aria-label="Install app" title="Install app"></button>
           <button class="icon-btn" id="logoutBtn" type="button" aria-label="Log out" title="Log out"></button>
         </div>
       </div>
-    </aside>
+    </header>
 
-    <section class="main">
-      <button class="search-btn" id="searchBtn" type="button">
-        <span class="search-ic" id="searchIc"></span>
-        <span class="search-txt">Search or run a command</span>
-        <kbd id="kbdHint">Ctrl K</kbd>
-      </button>
-
+    <section class="main" id="main">
       <form id="composer" class="composer" autocomplete="off">
         <textarea id="newText" rows="1" placeholder="Paste, type, or drop a file here" aria-label="New entry"></textarea>
         <div class="c-row">
@@ -66,6 +65,15 @@
         </div>
       </form>
 
+      <nav id="nav" class="tabs" aria-label="Views"></nav>
+      <div id="viewbar" class="viewbar hidden"></div>
+
+      <section id="shelfWrap" class="shelf-wrap hidden" aria-label="Pinned entries">
+        <h2 class="shelf-title" id="shelfTitle"></h2>
+        <div id="shelf" class="shelf"></div>
+      </section>
+
+      <h2 class="feed-title hidden" id="feedTitle">Everything else</h2>
       <div id="feed" class="feed"></div>
       <div id="empty" class="empty hidden"></div>
     </section>
@@ -75,6 +83,7 @@
 
   <dialog id="dlgPalette" class="dlg palette" aria-label="Search and commands"></dialog>
   <dialog id="dlgShare" class="dlg share" aria-label="Share a link"></dialog>
+  <dialog id="dlgBackup" class="dlg share" aria-label="Backup and restore"></dialog>
   <dialog id="dlgLight" class="dlg light" aria-label="Image preview"></dialog>
 
   <div id="menuHost"></div>

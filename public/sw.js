@@ -1,5 +1,5 @@
 /* Service worker: keeps the app shell available offline and handles the Android share sheet. */
-const CACHE = 'clipboard-shell-v1';
+const CACHE = 'clipboard-shell-v2';
 const SHELL = [
   '/', '/tokens.css', '/styles.css', '/theme.js', '/app.js', '/manifest.webmanifest',
   '/icons/icon.svg', '/fonts/geist.woff2', '/fonts/geist-mono.woff2',

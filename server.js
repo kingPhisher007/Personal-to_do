@@ -2,6 +2,9 @@ const express = require('express');
 const multer = require('multer');
 const crypto = require('crypto');
 const path = require('path');
+const zlib = require('zlib');
+const { Readable, pipeline } = require('stream');
+const { StringDecoder } = require('string_decoder');
 const { Pool } = require('pg');
 
 const PORT = process.env.PORT || 3000;
@@ -13,6 +16,8 @@ const MAX_FILE_MB = Number(process.env.MAX_FILE_MB || 10);
 const IS_PROD = process.env.NODE_ENV === 'production' || !!process.env.RENDER;
 const SESSION_DAYS = 30;
 const MAX_TTL_SECONDS = 30 * 86400;
+const TRASH_DAYS = Math.max(1, Number(process.env.TRASH_DAYS || 30));
+const BACKUP_FORMAT = 1;
 
 for (const [k, v] of Object.entries({ DATABASE_URL, APP_USER, APP_PASSWORD, SESSION_SECRET })) {
   if (!v) {
@@ -38,6 +43,19 @@ async function initDb() {
     ALTER TABLE items ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ;
     ALTER TABLE items ADD COLUMN IF NOT EXISTS ttl_seconds INTEGER;
     CREATE INDEX IF NOT EXISTS items_expires_idx ON items(expires_at) WHERE expires_at IS NOT NULL;
+    ALTER TABLE items ADD COLUMN IF NOT EXISTS pinned_at TIMESTAMPTZ;
+    ALTER TABLE items ADD COLUMN IF NOT EXISTS trashed_at TIMESTAMPTZ;
+    ALTER TABLE items ADD COLUMN IF NOT EXISTS uid TEXT NOT NULL DEFAULT md5(random()::text || clock_timestamp()::text);
+    CREATE UNIQUE INDEX IF NOT EXISTS items_uid_idx ON items(uid);
+    CREATE INDEX IF NOT EXISTS items_trashed_idx ON items(trashed_at) WHERE trashed_at IS NOT NULL;
+
+    CREATE TABLE IF NOT EXISTS app_meta (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
+    INSERT INTO app_meta (key, value)
+      VALUES ('db_created_at', LEAST(NOW(), COALESCE((SELECT MIN(created_at) FROM items), NOW()))::text)
+      ON CONFLICT (key) DO NOTHING;
 
     CREATE TABLE IF NOT EXISTS files (
       id SERIAL PRIMARY KEY,
@@ -129,7 +147,9 @@ function throttled(ip) {
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const fmtSize = (n) => (n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1048576).toFixed(1)} MB`);
 const INLINE_OK = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp']);
-const ALIVE = '(i.expires_at IS NULL OR i.expires_at > NOW())';
+// ALIVE_ANY: not auto-deleted yet (trashed entries still count). ALIVE: also not in the trash.
+const ALIVE_ANY = '(i.expires_at IS NULL OR i.expires_at > NOW())';
+const ALIVE = `${ALIVE_ANY} AND i.trashed_at IS NULL`;
 
 // Expiry: null / undefined / '' / 0 / 'forever' => keep forever (returns null).
 // A number of seconds => that many seconds. Anything else => false (invalid).
@@ -143,7 +163,7 @@ function parseTtl(v) {
 const EXPIRES_SQL = (p) =>
   `CASE WHEN ${p}::float8 IS NULL THEN NULL ELSE NOW() + make_interval(secs => ${p}::float8) END`;
 
-const ITEM_COLS = 'id, text, done, is_task, created_at, expires_at, ttl_seconds';
+const ITEM_COLS = 'id, text, done, is_task, created_at, expires_at, ttl_seconds, pinned_at, trashed_at';
 
 async function saveFiles(client, itemId, files) {
   const saved = [];
@@ -387,9 +407,10 @@ app.get('/api/events', (req, res) => {
 
 app.get('/api/items', async (req, res, next) => {
   try {
-    const [items, files, shares, now] = await Promise.all([
+    const [items, trash, files, shares, now] = await Promise.all([
       pool.query(`SELECT ${ITEM_COLS} FROM items i WHERE ${ALIVE} ORDER BY created_at DESC, id DESC`),
-      pool.query(`SELECT f.id, f.item_id, f.name, f.mime, f.size FROM files f JOIN items i ON i.id = f.item_id WHERE ${ALIVE} ORDER BY f.id`),
+      pool.query(`SELECT ${ITEM_COLS} FROM items i WHERE i.trashed_at IS NOT NULL ORDER BY trashed_at DESC, id DESC`),
+      pool.query(`SELECT f.id, f.item_id, f.name, f.mime, f.size FROM files f JOIN items i ON i.id = f.item_id WHERE ${ALIVE_ANY} ORDER BY f.id`),
       pool.query('SELECT token, item_id, file_id, expires_at FROM shares WHERE expires_at > NOW() ORDER BY created_at'),
       pool.query('SELECT NOW() AS now'),
     ]);
@@ -405,7 +426,9 @@ app.get('/api/items', async (req, res, next) => {
     }
     res.json({
       now: now.rows[0].now,
+      trash_days: TRASH_DAYS,
       items: items.rows.map((i) => ({ ...i, files: filesBy.get(i.id) || [], shares: sharesBy.get(i.id) || [] })),
+      trash: trash.rows.map((i) => ({ ...i, files: filesBy.get(i.id) || [], shares: [] })),
     });
   } catch (e) { next(e); }
 });
@@ -444,6 +467,15 @@ app.patch('/api/items/:id', async (req, res, next) => {
     if (typeof b.text === 'string') add('text = ?', b.text);
     if (typeof b.done === 'boolean') add('done = ?', b.done);
     if (typeof b.is_task === 'boolean') add('is_task = ?', b.is_task);
+    // Pinning keeps an entry: it switches auto-delete off unless a new expiry is sent in the same request.
+    if (typeof b.pinned === 'boolean') {
+      if (b.pinned) {
+        sets.push('pinned_at = COALESCE(pinned_at, NOW())');
+        if (!('ttl' in b)) sets.push('ttl_seconds = NULL', 'expires_at = NULL');
+      } else {
+        sets.push('pinned_at = NULL');
+      }
+    }
     if ('ttl' in b) {
       const ttl = parseTtl(b.ttl);
       if (ttl === false) return res.status(400).json({ error: 'Bad expiry' });
@@ -461,11 +493,40 @@ app.patch('/api/items/:id', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// Delete = move to the trash. The auto-delete timer is cleared so a restored entry never vanishes on its own.
 app.delete('/api/items/:id', async (req, res, next) => {
   try {
-    await pool.query('DELETE FROM items WHERE id = $1', [Number(req.params.id)]);
-    notify('delete');
+    await pool.query(
+      'UPDATE items SET trashed_at = NOW(), expires_at = NULL, ttl_seconds = NULL WHERE id = $1 AND trashed_at IS NULL',
+      [Number(req.params.id)]
+    );
+    notify('trash');
     res.json({ ok: true });
+  } catch (e) { next(e); }
+});
+
+app.post('/api/items/:id/restore', async (req, res, next) => {
+  try {
+    const { rowCount } = await pool.query('UPDATE items SET trashed_at = NULL WHERE id = $1 AND trashed_at IS NOT NULL', [Number(req.params.id)]);
+    if (!rowCount) return res.status(404).json({ error: 'That entry is not in the trash' });
+    notify('restore');
+    res.json({ ok: true });
+  } catch (e) { next(e); }
+});
+
+app.delete('/api/items/:id/forever', async (req, res, next) => {
+  try {
+    await pool.query('DELETE FROM items WHERE id = $1 AND trashed_at IS NOT NULL', [Number(req.params.id)]);
+    notify('purge');
+    res.json({ ok: true });
+  } catch (e) { next(e); }
+});
+
+app.delete('/api/trash', async (req, res, next) => {
+  try {
+    const { rowCount } = await pool.query('DELETE FROM items WHERE trashed_at IS NOT NULL');
+    notify('purge');
+    res.json({ ok: true, removed: rowCount });
   } catch (e) { next(e); }
 });
 
@@ -483,7 +544,7 @@ app.post('/api/items/:id/files', upload.array('files', 20), async (req, res, nex
 app.get('/api/files/:id', async (req, res, next) => {
   try {
     const { rows } = await pool.query(
-      `SELECT f.name, f.mime, f.data FROM files f JOIN items i ON i.id = f.item_id WHERE f.id = $1 AND ${ALIVE}`,
+      `SELECT f.name, f.mime, f.data FROM files f JOIN items i ON i.id = f.item_id WHERE f.id = $1 AND ${ALIVE_ANY}`,
       [Number(req.params.id)]
     );
     if (!rows.length) return res.status(404).json({ error: 'Not found' });
@@ -501,7 +562,10 @@ app.get('/api/files/:id', async (req, res, next) => {
 
 app.delete('/api/files/:id', async (req, res, next) => {
   try {
-    await pool.query('DELETE FROM files WHERE id = $1', [Number(req.params.id)]);
+    await pool.query(
+      'DELETE FROM files f USING items i WHERE f.id = $1 AND i.id = f.item_id AND i.trashed_at IS NULL',
+      [Number(req.params.id)]
+    );
     notify('files');
     res.json({ ok: true });
   } catch (e) { next(e); }
@@ -543,6 +607,223 @@ app.delete('/api/shares/:token', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+/* ---------- backup and restore ----------
+ * One gzip-compressed file, one JSON object per line:
+ *   meta, then item / file / share lines, then an "end" line.
+ * Files are base64. The "end" line lets a restore detect a cut-off download.
+ * Entries carry a stable uid, so restoring the same backup twice does not duplicate anything.
+ */
+
+const getMeta = async (key) => {
+  const { rows } = await pool.query('SELECT value FROM app_meta WHERE key = $1', [key]);
+  return rows.length ? rows[0].value : null;
+};
+const setMeta = (key, value) =>
+  pool.query('INSERT INTO app_meta (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value', [key, value]);
+
+app.get('/api/backup/info', async (req, res, next) => {
+  try {
+    const [it, fl, sh, created, last] = await Promise.all([
+      pool.query(`SELECT COUNT(*) FILTER (WHERE i.trashed_at IS NULL)::int AS items, COUNT(*) FILTER (WHERE i.trashed_at IS NOT NULL)::int AS trashed FROM items i WHERE ${ALIVE_ANY}`),
+      pool.query(`SELECT COUNT(*)::int AS files, COALESCE(SUM(f.size), 0)::float8 AS bytes FROM files f JOIN items i ON i.id = f.item_id WHERE ${ALIVE_ANY}`),
+      pool.query('SELECT COUNT(*)::int AS shares FROM shares WHERE expires_at > NOW()'),
+      pool.query("SELECT value::timestamptz AS v FROM app_meta WHERE key = 'db_created_at'").then((r) => (r.rows.length ? r.rows[0].v.toISOString() : null)),
+      getMeta('last_backup_at'),
+    ]);
+    res.json({ ...it.rows[0], ...fl.rows[0], ...sh.rows[0], db_created_at: created, last_backup_at: last, now: new Date().toISOString() });
+  } catch (e) { next(e); }
+});
+
+app.get('/api/backup', async (req, res, next) => {
+  const client = await pool.connect();
+  let gz = null;
+  let aborted = false;
+  try {
+    // one consistent snapshot, even if entries change while the file streams out
+    await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+    const [items, files, shares] = await Promise.all([
+      client.query(`SELECT i.id, i.uid, i.text, i.done, i.is_task, i.pinned_at, i.trashed_at, i.created_at, i.expires_at, i.ttl_seconds FROM items i WHERE ${ALIVE_ANY} ORDER BY i.id`),
+      client.query(`SELECT f.id, f.item_id, f.name, f.mime, f.created_at FROM files f JOIN items i ON i.id = f.item_id WHERE ${ALIVE_ANY} ORDER BY f.item_id, f.id`),
+      client.query('SELECT token, item_id, file_id, expires_at, created_at FROM shares WHERE expires_at > NOW() ORDER BY created_at'),
+    ]);
+    const uidOf = new Map(items.rows.map((r) => [r.id, r.uid]));
+    const day = new Date().toISOString().slice(0, 10);
+
+    res.set({
+      'Content-Type': 'application/gzip',
+      'Content-Disposition': `attachment; filename="clipboard-backup-${day}.jsonl.gz"`,
+      'Cache-Control': 'no-store',
+    });
+    gz = zlib.createGzip({ level: 6 });
+    gz.pipe(res);
+    res.on('close', () => { if (!res.writableFinished) { aborted = true; gz.destroy(); } });
+
+    const put = async (obj) => {
+      if (aborted) throw new Error('Download cancelled');
+      if (!gz.write(JSON.stringify(obj) + '\n')) await new Promise((r) => { gz.once('drain', r); gz.once('close', r); });
+    };
+
+    await put({ type: 'meta', app: 'clipboard-todo', format: BACKUP_FORMAT, exported_at: new Date().toISOString(), counts: { items: items.rows.length, files: files.rows.length, shares: shares.rows.length } });
+
+    const filesByItem = new Map();
+    for (const f of files.rows) {
+      if (!filesByItem.has(f.item_id)) filesByItem.set(f.item_id, []);
+      filesByItem.get(f.item_id).push(f);
+    }
+    let nItems = 0, nFiles = 0, nShares = 0;
+    for (const it of items.rows) {
+      await put({
+        type: 'item', uid: it.uid, text: it.text, done: it.done, is_task: it.is_task, pinned_at: it.pinned_at,
+        trashed_at: it.trashed_at, created_at: it.created_at, expires_at: it.expires_at, ttl_seconds: it.ttl_seconds,
+      });
+      nItems++;
+      for (const f of filesByItem.get(it.id) || []) {
+        const { rows } = await client.query('SELECT data FROM files WHERE id = $1', [f.id]); // one at a time: keeps memory flat
+        if (!rows.length) continue;
+        await put({ type: 'file', fid: f.id, item_uid: it.uid, name: f.name, mime: f.mime, created_at: f.created_at, data: rows[0].data.toString('base64') });
+        nFiles++;
+      }
+    }
+    for (const s of shares.rows) {
+      if (!uidOf.has(s.item_id)) continue;
+      await put({ type: 'share', token: s.token, item_uid: uidOf.get(s.item_id), file_fid: s.file_id, expires_at: s.expires_at, created_at: s.created_at });
+      nShares++;
+    }
+    await put({ type: 'end', counts: { items: nItems, files: nFiles, shares: nShares } });
+    await new Promise((resolve) => { res.once('finish', resolve); res.once('close', resolve); gz.end(); });
+    if (!aborted) await setMeta('last_backup_at', new Date().toISOString());
+  } catch (e) {
+    if (!res.headersSent) next(e);
+    else { console.error('backup failed:', e.message); res.destroy(); }
+  } finally {
+    await client.query('ROLLBACK').catch(() => {});
+    client.release();
+  }
+});
+
+async function* readLines(source) {
+  const dec = new StringDecoder('utf8');
+  let buf = '';
+  let from = 0;
+  for await (const chunk of source) {
+    buf += dec.write(chunk);
+    let i;
+    while ((i = buf.indexOf('\n', from)) !== -1) {
+      const line = buf.slice(0, i);
+      buf = buf.slice(i + 1);
+      from = 0;
+      if (line.trim()) yield line;
+    }
+    from = buf.length;
+    if (buf.length > 64 * 1024 * 1024) throw badRequest('This file is not a Clipboard backup');
+  }
+  buf += dec.end();
+  if (buf.trim()) yield buf;
+}
+
+function badRequest(msg) { const e = new Error(msg); e.status = 400; return e; }
+
+async function openBackupStream(req) {
+  const it = req[Symbol.asyncIterator]();
+  const first = await it.next();
+  if (first.done) throw badRequest('That file is empty');
+  async function* all() {
+    yield first.value;
+    for (;;) { const n = await it.next(); if (n.done) return; yield n.value; }
+  }
+  const b = first.value;
+  if (b.length >= 2 && b[0] === 0x1f && b[1] === 0x8b) {
+    const gunzip = zlib.createGunzip();
+    pipeline(Readable.from(all(), { objectMode: false }), gunzip, () => {});
+    return gunzip;
+  }
+  return all();
+}
+
+const asDate = (v) => { if (v == null) return null; const d = new Date(v); return Number.isNaN(d.getTime()) ? null : d; };
+
+app.post('/api/backup/import', async (req, res, next) => {
+  const client = await pool.connect();
+  try {
+    const source = await openBackupStream(req);
+    await client.query('BEGIN');
+    const now = Date.now();
+    const itemIds = new Map(); // backup uid -> new row id (only entries added in this run)
+    const fileIds = new Map(); // backup file id -> new row id
+    const added = { items: 0, files: 0, shares: 0 };
+    const skipped = { items: 0, expired: 0 };
+    let seenMeta = false;
+    let ended = false;
+
+    for await (const line of readLines(source)) {
+      let o;
+      try { o = JSON.parse(line); } catch { throw badRequest('This file is not a Clipboard backup'); }
+      if (!o || typeof o !== 'object') throw badRequest('This file is not a Clipboard backup');
+
+      if (!seenMeta) {
+        if (o.type !== 'meta' || o.app !== 'clipboard-todo') throw badRequest('This file is not a Clipboard backup');
+        if (o.format > BACKUP_FORMAT) throw badRequest('This backup was made by a newer version of the app. Update the app first.');
+        seenMeta = true;
+        continue;
+      }
+      if (ended) continue;
+
+      if (o.type === 'item') {
+        if (typeof o.uid !== 'string' || !/^[\w-]{8,64}$/.test(o.uid)) continue;
+        const trashed = asDate(o.trashed_at);
+        const expires = asDate(o.expires_at);
+        if (!trashed && expires && expires.getTime() <= now) { skipped.expired++; continue; }
+        const ttl = Number.isInteger(o.ttl_seconds) && o.ttl_seconds > 0 ? o.ttl_seconds : null;
+        const { rows } = await client.query(
+          `INSERT INTO items (uid, text, done, is_task, pinned_at, trashed_at, created_at, expires_at, ttl_seconds)
+           VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7, NOW()), $8, $9)
+           ON CONFLICT (uid) DO NOTHING RETURNING id`,
+          [o.uid, String(o.text ?? ''), o.done === true, o.is_task === true, asDate(o.pinned_at), trashed, asDate(o.created_at), trashed ? null : expires, ttl]
+        );
+        if (rows.length) { itemIds.set(o.uid, rows[0].id); added.items++; } else skipped.items++;
+      } else if (o.type === 'file') {
+        const itemId = itemIds.get(o.item_uid);
+        if (!itemId || typeof o.data !== 'string') continue;
+        const data = Buffer.from(o.data, 'base64');
+        const { rows } = await client.query(
+          'INSERT INTO files (item_id, name, mime, size, data, created_at) VALUES ($1,$2,$3,$4,$5,COALESCE($6, NOW())) RETURNING id',
+          [itemId, String(o.name || 'file').slice(0, 500), String(o.mime || 'application/octet-stream').slice(0, 200), data.length, data, asDate(o.created_at)]
+        );
+        fileIds.set(o.fid, rows[0].id);
+        added.files++;
+      } else if (o.type === 'share') {
+        const itemId = itemIds.get(o.item_uid);
+        const expires = asDate(o.expires_at);
+        if (!itemId || !expires || expires.getTime() <= now || typeof o.token !== 'string' || !/^[A-Za-z0-9_-]{16,64}$/.test(o.token)) continue;
+        let fileId = null;
+        if (o.file_fid != null) { fileId = fileIds.get(o.file_fid) || null; if (!fileId) continue; }
+        const r = await client.query(
+          'INSERT INTO shares (token, item_id, file_id, expires_at, created_at) VALUES ($1,$2,$3,$4,COALESCE($5, NOW())) ON CONFLICT (token) DO NOTHING',
+          [o.token, itemId, fileId, expires, asDate(o.created_at)]
+        );
+        added.shares += r.rowCount;
+      } else if (o.type === 'end') {
+        ended = true;
+      }
+    }
+
+    if (!seenMeta) throw badRequest('This file is not a Clipboard backup');
+    if (!ended) throw badRequest('This backup looks cut off, so nothing was restored. Download it again and retry.');
+    await client.query('COMMIT');
+    notify('import');
+    res.json({ ok: true, added, skipped });
+  } catch (e) {
+    await client.query('ROLLBACK').catch(() => {});
+    req.resume();
+    if (e.status === 400) return res.status(400).json({ error: e.message });
+    if (e.code === 'Z_DATA_ERROR' || e.code === 'Z_BUF_ERROR') return res.status(400).json({ error: 'This file is damaged or not a Clipboard backup' });
+    console.error('import failed:', e);
+    res.status(500).json({ error: 'Restore failed, nothing was changed' });
+  } finally {
+    client.release();
+  }
+});
+
 /* ---------- static app ---------- */
 
 app.use(
@@ -571,9 +852,11 @@ app.use((err, req, res, next) => {
 
 async function purge() {
   try {
-    const a = await pool.query('DELETE FROM items WHERE expires_at IS NOT NULL AND expires_at <= NOW()');
+    // timed auto-delete is permanent; manual deletes sit in the trash until TRASH_DAYS pass
+    const a = await pool.query('DELETE FROM items WHERE expires_at IS NOT NULL AND expires_at <= NOW() AND trashed_at IS NULL');
     const b = await pool.query('DELETE FROM shares WHERE expires_at <= NOW()');
-    if (a.rowCount || b.rowCount) notify('purge');
+    const c = await pool.query('DELETE FROM items WHERE trashed_at IS NOT NULL AND trashed_at <= NOW() - make_interval(days => $1::int)', [TRASH_DAYS]);
+    if (a.rowCount || b.rowCount || c.rowCount) notify('purge');
   } catch (e) {
     console.error('purge failed:', e.message);
   }
