@@ -437,3 +437,119 @@ dialog.dlg[open] { animation: pop .14s ease-out; }
 }
 
 .btn.armed { background: var(--danger); border-color: var(--danger); color: #fff; }
+
+/* =====================================================================
+   Glass layer. Everything below turns the flat surfaces above into frosted
+   panels: translucent fill, backdrop blur, a bright top edge, a soft sheen.
+   ===================================================================== */
+:root { --blur: blur(22px) saturate(170%); --blur-strong: blur(34px) saturate(190%); }
+
+.top, .composer, .tabs, .viewbar, .search-btn, .login-card, .entry, .btn, .chip-btn, .fuse-pick,
+.menu, .toast, dialog.dlg, .veil > div, .actions {
+  -webkit-backdrop-filter: var(--blur);
+  backdrop-filter: var(--blur);
+}
+.menu, .toast, dialog.dlg, .veil > div { -webkit-backdrop-filter: var(--blur-strong); backdrop-filter: var(--blur-strong); }
+
+/* top bar: a pane of glass across the page */
+.top { background: var(--glass); border-bottom: 1px solid var(--glass-line); box-shadow: var(--glass-hi), 0 8px 30px -18px rgba(0, 0, 0, .55); }
+.search-btn { background: var(--glass); border-color: var(--glass-line); box-shadow: var(--glass-hi); }
+.search-btn:hover { background: var(--glass-2); }
+.icon-btn:hover { background: var(--glass-2); box-shadow: var(--glass-hi); }
+
+/* composer */
+.composer {
+  position: relative; background: var(--glass); border: 1px solid var(--glass-line); border-radius: 26px;
+  box-shadow: var(--glass-hi), var(--glass-drop);
+}
+.composer::after, .entry::after, .login-card::after {
+  content: ''; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+  background: linear-gradient(135deg, var(--sheen), transparent 42%);
+}
+.composer > * { position: relative; z-index: 1; }
+.composer:focus-within { border-color: var(--accent); box-shadow: var(--glass-hi), var(--glass-drop), 0 0 0 4px var(--accent-wash); }
+.fuse-pick { background: var(--inset); border-color: var(--glass-line); }
+.fuse-pick button[aria-checked='true'] { background: var(--glass-2); box-shadow: var(--glass-hi), 0 0 0 1px var(--glass-line); }
+.chip-btn { background: var(--glass); border-color: var(--glass-line); box-shadow: var(--glass-hi); }
+.chip-btn:hover { background: var(--glass-2); border-color: var(--glass-line); }
+.chip-btn.toggle[aria-checked='true'] { background: var(--accent-wash); border-color: var(--accent); }
+
+/* buttons */
+.btn { background: var(--glass); border-color: var(--glass-line); box-shadow: var(--glass-hi); }
+.btn:hover { background: var(--glass-2); border-color: var(--accent); }
+.btn.primary {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 82%, #fff), var(--accent));
+  border-color: color-mix(in srgb, var(--accent) 70%, #fff);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .55), 0 8px 22px -8px color-mix(in srgb, var(--accent) 80%, transparent);
+}
+.btn.primary:hover { background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 70%, #fff), var(--accent)); filter: none; }
+.btn.danger:hover { background: var(--danger-wash); }
+.btn.armed { background: var(--danger); border-color: var(--danger); color: #fff; }
+
+/* tabs become one glass segmented control */
+.tabs {
+  gap: 2px; margin: 20px 0 8px; padding: 5px; border: 1px solid var(--glass-line); border-radius: 999px;
+  background: var(--glass); box-shadow: var(--glass-hi), var(--glass-drop);
+}
+.tabs button { padding: 7px 14px; border: 1px solid transparent; border-radius: 999px; margin: 0; }
+.tabs button[aria-current='true'] {
+  background: var(--glass-2); border-color: var(--glass-line); box-shadow: var(--glass-hi), 0 4px 14px -6px rgba(0, 0, 0, .45);
+}
+.viewbar { background: var(--glass); border: 1px solid var(--glass-line); box-shadow: var(--glass-hi); }
+
+/* entries: every one is its own pane of glass */
+.entry {
+  margin: 0 0 12px; padding: 15px 18px 17px; border: 1px solid var(--glass-line); border-radius: 24px;
+  background: var(--glass); box-shadow: var(--glass-hi), var(--glass-drop);
+  transition: background .18s, transform .18s, box-shadow .18s;
+}
+.feed .entry:last-child { border-bottom-color: var(--glass-line); }
+.entry:hover, .entry:focus-within { background: var(--glass-2); }
+.entry > * { position: relative; z-index: 1; }
+.entry > .actions { position: absolute; z-index: 3; }
+.entry.tile { margin: 0; padding: 14px 16px 16px; border-radius: 24px; background: var(--glass); border-color: var(--glass-line); box-shadow: var(--glass-hi), var(--glass-drop); }
+.entry.tile:hover, .entry.tile:focus-within { background: var(--glass-2); border-color: color-mix(in srgb, var(--pin) 60%, var(--glass-line)); }
+.entry.is-pinned { box-shadow: var(--glass-hi), var(--glass-drop), 0 0 0 1px color-mix(in srgb, var(--pin) 22%, transparent); }
+.entry.trashed .actions { position: static; z-index: 1; }
+.fuse { left: 20px; right: 20px; bottom: 8px; border-radius: 3px; background: var(--inset); }
+.tile .fuse { left: 18px; right: 18px; top: 7px; bottom: auto; border-radius: 3px; }
+.entry.fresh { animation: fresh 1.6s ease-out; }
+
+.actions { background: var(--pane); border-color: var(--glass-line); box-shadow: var(--glass-hi), 0 10px 26px -10px rgba(0, 0, 0, .55); }
+.e-link, .fchip, .codebox, .editor textarea { background: var(--inset); }
+.e-link, .codebox, .fchip { border: 1px solid var(--glass-line); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .05); }
+.thumb { border-color: var(--glass-line); box-shadow: var(--glass-drop); }
+.pill { background: var(--inset); border-color: var(--glass-line); }
+.check { border-color: var(--muted); background: var(--inset); }
+.ext { background: var(--accent-wash); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .12); }
+
+/* floating panes: dialogs, menus, palette, toasts, login */
+dialog.dlg { background: var(--pane); border: 1px solid var(--glass-line); border-radius: 28px; box-shadow: var(--glass-hi), var(--shadow); }
+dialog.dlg::backdrop { background: rgba(4, 12, 16, .38); -webkit-backdrop-filter: blur(10px) saturate(130%); backdrop-filter: blur(10px) saturate(130%); }
+.menu { background: var(--pane); border-color: var(--glass-line); border-radius: 18px; box-shadow: var(--glass-hi), var(--shadow); }
+.toast { background: var(--pane); border-color: var(--glass-line); border-radius: 18px; box-shadow: var(--glass-hi), var(--shadow); }
+.p-item[aria-selected='true'] { background: var(--glass-2); box-shadow: var(--glass-hi); }
+.p-input, .p-foot, .l-bar, .b-sec, .s-active { border-color: var(--glass-line); }
+.s-scope button, .s-ttl button, .b-stat, .s-result input { background: var(--inset); border: 1px solid var(--glass-line); }
+.s-scope button[aria-checked='true'], .s-ttl button[aria-checked='true'] { background: var(--accent-wash); border-color: var(--accent); }
+.b-warn { border: 1px solid color-mix(in srgb, var(--pin) 35%, transparent); }
+.l-stage { background: var(--inset); }
+.veil > div { background: var(--pane); border-color: var(--glass-line); box-shadow: var(--glass-hi), var(--shadow); }
+
+.login-card { position: relative; background: var(--glass); border: 1px solid var(--glass-line); border-radius: 30px; box-shadow: var(--glass-hi), var(--shadow); -webkit-backdrop-filter: var(--blur-strong); backdrop-filter: var(--blur-strong); }
+.login-card > * { position: relative; z-index: 1; }
+.field input { background: var(--inset); border-color: var(--glass-line); }
+.login .login-brand h1 { letter-spacing: -.03em; }
+
+@media (max-width: 720px) {
+  .entry { margin: 0 0 10px; padding: 12px 14px 15px; border-radius: 22px; }
+  .entry.tile { padding: 12px 14px 15px; }
+  .fuse { left: 16px; right: 16px; }
+  .tabs { margin-top: 16px; }
+  .composer { border-radius: 24px; }
+}
+
+/* browsers without backdrop-filter: make the panes opaque enough to read */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  :root { --glass: var(--pane); --glass-2: var(--pane); }
+}
