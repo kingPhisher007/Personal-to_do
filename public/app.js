@@ -520,7 +520,7 @@
     render();
     refresh();
     connectEvents();
-    loadBackupInfo();
+    setTimeout(loadBackupInfo, 4000); // not needed to draw the page
   }
   setInterval(() => { if (!document.hidden && !$('#app').classList.contains('hidden')) loadBackupInfo(); }, 30 * 60 * 1000);
 
@@ -541,7 +541,7 @@
     document.documentElement.dataset.theme = t;
     store.set('theme', t);
     const m = $('meta[name="theme-color"]');
-    if (m) m.content = t === 'light' ? '#eff3f1' : '#0a1315';
+    if (m) m.content = t === 'light' ? '#b9864a' : '#6a4727';
     $('#themeBtn').replaceChildren(icon(t === 'light' ? 'moon' : 'sun'));
     $('#themeBtn').title = t === 'light' ? 'Switch to dark theme' : 'Switch to light theme';
   }
@@ -606,7 +606,7 @@
   const known = new Set();
   function signature(it, mode) {
     return JSON.stringify([
-      mode, it.text, it.done, it.is_task, it.pinned_at, it.trashed_at, it.expires_at, it.ttl_seconds,
+      mode, it.text, it.done, it.done_lines, it.is_task, it.pinned_at, it.trashed_at, it.expires_at, it.ttl_seconds,
       it.files.map((f) => f.id + f.name), it.shares.map((s) => s.token),
       S.edit && S.edit.id === it.id ? 'edit' : '',
     ]);
@@ -783,11 +783,26 @@
   function buildBody(it, kind) {
     const text = it.text;
     if (kind === 'task') {
-      const check = h('button', {
-        type: 'button', class: 'check', role: 'checkbox', 'aria-checked': String(it.done), 'aria-label': 'Mark done',
-        onclick: () => { it.done = !it.done; render(); patchItem(it, { done: it.done }); },
-      }, icon('check', 'sm'));
-      return [h('div', { class: 'task-line' }, check, h('div', { class: 'e-text' }, text || '(empty task)'))];
+      // one checkbox per non-empty line; done_lines remembers which lines are ticked
+      const lines = text.split('\n');
+      const real = lines.map((l) => l.trim()).filter(Boolean);
+      if (!real.length) return [h('div', { class: 'e-text' }, '(empty task)')];
+      const ticked = new Set(it.done && !(it.done_lines || []).length ? real : it.done_lines || []);
+      const toggle = (line) => {
+        if (ticked.has(line)) ticked.delete(line); else ticked.add(line);
+        it.done_lines = [...ticked];
+        it.done = real.every((l) => ticked.has(l));
+        render();
+        patchItem(it, { done_lines: it.done_lines });
+      };
+      return [h('div', { class: 'task-list' }, lines.map((raw) => {
+        const line = raw.trim();
+        if (!line) return h('div', { class: 'task-gap' });
+        const on = ticked.has(line);
+        return h('div', { class: 'task-line' + (on ? ' is-done' : '') },
+          h('button', { type: 'button', class: 'check', role: 'checkbox', 'aria-checked': String(on), 'aria-label': `Mark done: ${line.slice(0, 60)}`, onclick: () => toggle(line) }, icon('check', 'sm')),
+          h('div', { class: 'e-text' }, line));
+      }))];
     }
     if (kind === 'link') {
       let host = text, rest = '';
@@ -817,7 +832,7 @@
           class: 'thumb', role: 'button', tabindex: '0', 'aria-label': `Preview ${f.name}`,
           onclick: (e) => { e.stopPropagation(); openLight(it.id, idx); },
           onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openLight(it.id, idx); } },
-        }, h('img', { src: `/api/files/${f.id}`, alt: f.name, loading: 'lazy' }), x));
+        }, h('img', { src: `/api/files/${f.id}`, alt: f.name, loading: 'lazy', decoding: 'async' }), x));
       });
       out.push(grid);
     }

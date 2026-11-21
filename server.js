@@ -3,6 +3,7 @@ const multer = require('multer');
 const crypto = require('crypto');
 const path = require('path');
 const zlib = require('zlib');
+const compression = require('compression');
 const { Readable, pipeline } = require('stream');
 const { StringDecoder } = require('string_decoder');
 const { Pool } = require('pg');
@@ -45,6 +46,9 @@ async function initDb() {
     CREATE INDEX IF NOT EXISTS items_expires_idx ON items(expires_at) WHERE expires_at IS NOT NULL;
     ALTER TABLE items ADD COLUMN IF NOT EXISTS pinned_at TIMESTAMPTZ;
     ALTER TABLE items ADD COLUMN IF NOT EXISTS trashed_at TIMESTAMPTZ;
+    ALTER TABLE items ADD COLUMN IF NOT EXISTS done_lines JSONB NOT NULL DEFAULT '[]'::jsonb;
+    UPDATE items SET done_lines = COALESCE((SELECT jsonb_agg(DISTINCT q.l) FROM (SELECT btrim(x) AS l FROM unnest(string_to_array(items.text, E'\n')) AS x) q WHERE q.l <> ''), '[]'::jsonb)
+      WHERE done AND done_lines = '[]'::jsonb;
     ALTER TABLE items ADD COLUMN IF NOT EXISTS uid TEXT NOT NULL DEFAULT md5(random()::text || clock_timestamp()::text);
     CREATE UNIQUE INDEX IF NOT EXISTS items_uid_idx ON items(uid);
     CREATE INDEX IF NOT EXISTS items_trashed_idx ON items(trashed_at) WHERE trashed_at IS NOT NULL;
@@ -163,7 +167,11 @@ function parseTtl(v) {
 const EXPIRES_SQL = (p) =>
   `CASE WHEN ${p}::float8 IS NULL THEN NULL ELSE NOW() + make_interval(secs => ${p}::float8) END`;
 
-const ITEM_COLS = 'id, text, done, is_task, created_at, expires_at, ttl_seconds, pinned_at, trashed_at';
+// A task is one entry with a checkbox per non-empty line. done_lines holds the (trimmed) lines that are ticked.
+const taskLines = (text) => String(text || '').split('\n').map((l) => l.trim()).filter(Boolean);
+const cleanLines = (arr) => [...new Set((Array.isArray(arr) ? arr : []).filter((l) => typeof l === 'string').slice(0, 500).map((l) => l.trim().slice(0, 4000)).filter(Boolean))];
+
+const ITEM_COLS = 'id, text, done, done_lines, is_task, created_at, expires_at, ttl_seconds, pinned_at, trashed_at';
 
 async function saveFiles(client, itemId, files) {
   const saved = [];
@@ -183,6 +191,10 @@ async function saveFiles(client, itemId, files) {
 
 const app = express();
 app.set('trust proxy', 1);
+// gzip text responses (the page, scripts, JSON). The live-update stream must not be buffered, and backups are already gzipped.
+app.use(compression({
+  filter: (req, res) => (req.path === '/api/events' || req.path === '/api/backup' ? false : compression.filter(req, res)),
+}));
 app.disable('x-powered-by');
 app.use(express.json({ limit: '1mb' }));
 app.use((req, res, next) => {
@@ -465,7 +477,17 @@ app.patch('/api/items/:id', async (req, res, next) => {
     const vals = [id];
     const add = (sql, v) => { vals.push(v); sets.push(sql.replace('?', `$${vals.length}`)); };
     if (typeof b.text === 'string') add('text = ?', b.text);
-    if (typeof b.done === 'boolean') add('done = ?', b.done);
+    if (typeof b.text === 'string' || Array.isArray(b.done_lines) || typeof b.done === 'boolean') {
+      const cur = await pool.query('SELECT text, done_lines FROM items WHERE id = $1', [id]);
+      if (cur.rows.length) {
+        const lines = taskLines(typeof b.text === 'string' ? b.text : cur.rows[0].text);
+        let ticked = Array.isArray(b.done_lines) ? cleanLines(b.done_lines) : cleanLines(cur.rows[0].done_lines);
+        if (!Array.isArray(b.done_lines) && typeof b.done === 'boolean') ticked = b.done ? lines : [];
+        ticked = ticked.filter((l) => lines.includes(l)); // editing a line un-ticks it
+        add('done_lines = ?::jsonb', JSON.stringify(ticked));
+        add('done = ?', lines.length > 0 && lines.every((l) => ticked.includes(l)));
+      }
+    }
     if (typeof b.is_task === 'boolean') add('is_task = ?', b.is_task);
     // Pinning keeps an entry: it switches auto-delete off unless a new expiry is sent in the same request.
     if (typeof b.pinned === 'boolean') {
@@ -553,7 +575,7 @@ app.get('/api/files/:id', async (req, res, next) => {
     res.set({
       'Content-Type': INLINE_OK.has(f.mime) ? f.mime : 'application/octet-stream',
       'Content-Disposition': `${inline ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeURIComponent(f.name)}`,
-      'Cache-Control': 'private, max-age=3600',
+      'Cache-Control': 'private, max-age=31536000, immutable', // a file id never changes, so the phone only downloads it once
       'Content-Security-Policy': "default-src 'none'; sandbox",
     });
     res.send(f.data);
@@ -642,7 +664,7 @@ app.get('/api/backup', async (req, res, next) => {
     // one consistent snapshot, even if entries change while the file streams out
     await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
     const [items, files, shares] = await Promise.all([
-      client.query(`SELECT i.id, i.uid, i.text, i.done, i.is_task, i.pinned_at, i.trashed_at, i.created_at, i.expires_at, i.ttl_seconds FROM items i WHERE ${ALIVE_ANY} ORDER BY i.id`),
+      client.query(`SELECT i.id, i.uid, i.text, i.done, i.done_lines, i.is_task, i.pinned_at, i.trashed_at, i.created_at, i.expires_at, i.ttl_seconds FROM items i WHERE ${ALIVE_ANY} ORDER BY i.id`),
       client.query(`SELECT f.id, f.item_id, f.name, f.mime, f.created_at FROM files f JOIN items i ON i.id = f.item_id WHERE ${ALIVE_ANY} ORDER BY f.item_id, f.id`),
       client.query('SELECT token, item_id, file_id, expires_at, created_at FROM shares WHERE expires_at > NOW() ORDER BY created_at'),
     ]);
@@ -673,7 +695,7 @@ app.get('/api/backup', async (req, res, next) => {
     let nItems = 0, nFiles = 0, nShares = 0;
     for (const it of items.rows) {
       await put({
-        type: 'item', uid: it.uid, text: it.text, done: it.done, is_task: it.is_task, pinned_at: it.pinned_at,
+        type: 'item', uid: it.uid, text: it.text, done: it.done, done_lines: it.done_lines, is_task: it.is_task, pinned_at: it.pinned_at,
         trashed_at: it.trashed_at, created_at: it.created_at, expires_at: it.expires_at, ttl_seconds: it.ttl_seconds,
       });
       nItems++;
@@ -774,11 +796,14 @@ app.post('/api/backup/import', async (req, res, next) => {
         const expires = asDate(o.expires_at);
         if (!trashed && expires && expires.getTime() <= now) { skipped.expired++; continue; }
         const ttl = Number.isInteger(o.ttl_seconds) && o.ttl_seconds > 0 ? o.ttl_seconds : null;
+        const body = String(o.text ?? '');
+        // backups from before per-line ticks only have "done": treat that as every line ticked
+        const ticked = Array.isArray(o.done_lines) ? cleanLines(o.done_lines) : (o.done === true ? taskLines(body) : []);
         const { rows } = await client.query(
-          `INSERT INTO items (uid, text, done, is_task, pinned_at, trashed_at, created_at, expires_at, ttl_seconds)
-           VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7, NOW()), $8, $9)
+          `INSERT INTO items (uid, text, done, is_task, pinned_at, trashed_at, created_at, expires_at, ttl_seconds, done_lines)
+           VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7, NOW()), $8, $9, $10::jsonb)
            ON CONFLICT (uid) DO NOTHING RETURNING id`,
-          [o.uid, String(o.text ?? ''), o.done === true, o.is_task === true, asDate(o.pinned_at), trashed, asDate(o.created_at), trashed ? null : expires, ttl]
+          [o.uid, body, o.done === true, o.is_task === true, asDate(o.pinned_at), trashed, asDate(o.created_at), trashed ? null : expires, ttl, JSON.stringify(ticked)]
         );
         if (rows.length) { itemIds.set(o.uid, rows[0].id); added.items++; } else skipped.items++;
       } else if (o.type === 'file') {
@@ -835,6 +860,7 @@ app.use(
       );
       res.set('Referrer-Policy', 'same-origin');
       if (/sw\.js$/.test(file)) res.set('Cache-Control', 'no-cache');
+      else if (/\/icons\//.test(file)) res.set('Cache-Control', 'public, max-age=604800');
     },
   })
 );
