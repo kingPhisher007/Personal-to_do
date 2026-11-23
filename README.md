@@ -15,8 +15,13 @@ One Node service serves both the app and the API, so you only deploy one thing t
 - **Paste anywhere.** Ctrl V on the page saves text instantly. Pasted screenshots and dropped files upload as new entries, or attach to the entry you drop them on.
 - **Pins.** Pin an entry to keep it on a shelf at the top. Pinning switches its auto-delete timer off, so a pinned entry is never removed by accident.
 - **Trash.** Deleting an entry moves it to the Trash (with an Undo button). It can be restored for 30 days (`TRASH_DAYS`), then it is removed for good. Entries on an auto-delete timer skip the trash and are removed when the timer runs out.
-- **Backup and restore.** The database icon in the top bar downloads everything (entries, files, pins, trash, share links) as one file, and restores it into any database, including a brand new one. Restoring twice does not duplicate anything, and a damaged or cut-off file is rejected without changing anything. A dot appears on the icon once the database is about 23 days old and has no recent backup.
-- Light and dark themes, phone layout, search across text and file names.
+- **Backup and restore.** The database icon in the top bar downloads everything (entries, files, pins, trash, share links, goals, plan, diary) as one file, and restores it into any database, including a brand new one. Restoring twice does not duplicate anything, and a damaged or cut-off file is rejected without changing anything. A dot appears on the icon once the database is about 23 days old and has no recent backup.
+- **Side panel.** On a wide screen a left panel holds a month calendar (dots show planned and written days), today's tasks with a quick add box, and your goals with progress. On a phone it opens from the menu button.
+- **Plan.** Three views. *Day*: tick tasks, add new ones, see what is behind and move it. *Week* (Monday to Sunday): seven day cards, weekday and weekend progress bars, a focus line, "By Sunday I can...", a learning log of task notes, a weekly review, and the last eight weeks. *Goals*: a goal such as "Learn DevOps" has a length in days and topics, each lasting some number of study days. The plan lays them onto weekdays (or weekends too) and shows if they do not fit.
+- **Moving work.** Any unfinished task can go to today, tomorrow, the weekend, next week or any day, one at a time, all of a day at once, or by dragging it onto another day. Re-lay a goal from today to slide the rest later. Tasks show how many times they were moved.
+- **Diary.** One entry per day for the whole year, saved as you type. Mood, tags, optional prompts (work, life, wins, struggles, tomorrow), a year grid coloured by mood, month list, search, "on this day" from earlier years, and a warning if another device changed the same day.
+- **Themes.** The palette button in the top bar sets a *style* (Wood shelves, or Plain paper: flat, warm off-white, one accent) and a *mode* (Auto, Always light, Always dark). Auto is light from 06:00 to 19:00 and dark otherwise, following the clock on the device. Both choices are remembered per device.
+- Phone layout, search across text and file names.
 
 ## Run locally
 

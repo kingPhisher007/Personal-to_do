@@ -7,6 +7,7 @@ const compression = require('compression');
 const { Readable, pipeline } = require('stream');
 const { StringDecoder } = require('string_decoder');
 const { Pool } = require('pg');
+const workspace = require('./workspace');
 
 const PORT = process.env.PORT || 3000;
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -18,7 +19,7 @@ const IS_PROD = process.env.NODE_ENV === 'production' || !!process.env.RENDER;
 const SESSION_DAYS = 30;
 const MAX_TTL_SECONDS = 30 * 86400;
 const TRASH_DAYS = Math.max(1, Number(process.env.TRASH_DAYS || 30));
-const BACKUP_FORMAT = 1;
+const BACKUP_FORMAT = 2;
 
 for (const [k, v] of Object.entries({ DATABASE_URL, APP_USER, APP_PASSWORD, SESSION_SECRET })) {
   if (!v) {
@@ -81,6 +82,7 @@ async function initDb() {
     );
     CREATE INDEX IF NOT EXISTS shares_item_idx ON shares(item_id);
   `);
+  await workspace.initSchema(pool);
 }
 
 /* ---------- live updates (Server-Sent Events) ---------- */
@@ -643,6 +645,9 @@ const getMeta = async (key) => {
 const setMeta = (key, value) =>
   pool.query('INSERT INTO app_meta (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value', [key, value]);
 
+// planner and diary routes
+workspace.mount(app, { pool, notify, getMeta, setMeta });
+
 app.get('/api/backup/info', async (req, res, next) => {
   try {
     const [it, fl, sh, created, last] = await Promise.all([
@@ -652,7 +657,8 @@ app.get('/api/backup/info', async (req, res, next) => {
       pool.query("SELECT value::timestamptz AS v FROM app_meta WHERE key = 'db_created_at'").then((r) => (r.rows.length ? r.rows[0].v.toISOString() : null)),
       getMeta('last_backup_at'),
     ]);
-    res.json({ ...it.rows[0], ...fl.rows[0], ...sh.rows[0], db_created_at: created, last_backup_at: last, now: new Date().toISOString() });
+    const ws = await workspace.exportCounts(pool);
+    res.json({ ...it.rows[0], ...fl.rows[0], ...sh.rows[0], plan_tasks: ws.tasks, goals: ws.goals, diary: ws.diary, db_created_at: created, last_backup_at: last, now: new Date().toISOString() });
   } catch (e) { next(e); }
 });
 
@@ -685,7 +691,7 @@ app.get('/api/backup', async (req, res, next) => {
       if (!gz.write(JSON.stringify(obj) + '\n')) await new Promise((r) => { gz.once('drain', r); gz.once('close', r); });
     };
 
-    await put({ type: 'meta', app: 'clipboard-todo', format: BACKUP_FORMAT, exported_at: new Date().toISOString(), counts: { items: items.rows.length, files: files.rows.length, shares: shares.rows.length } });
+    await put({ type: 'meta', app: 'clipboard-todo', format: BACKUP_FORMAT, exported_at: new Date().toISOString(), counts: { items: items.rows.length, files: files.rows.length, shares: shares.rows.length, ...(await workspace.exportCounts(client)) } });
 
     const filesByItem = new Map();
     for (const f of files.rows) {
@@ -711,6 +717,7 @@ app.get('/api/backup', async (req, res, next) => {
       await put({ type: 'share', token: s.token, item_uid: uidOf.get(s.item_id), file_fid: s.file_id, expires_at: s.expires_at, created_at: s.created_at });
       nShares++;
     }
+    for await (const line of workspace.exportLines(client)) await put(line);
     await put({ type: 'end', counts: { items: nItems, files: nFiles, shares: nShares } });
     await new Promise((resolve) => { res.once('finish', resolve); res.once('close', resolve); gz.end(); });
     if (!aborted) await setMeta('last_backup_at', new Date().toISOString());
@@ -774,6 +781,7 @@ app.post('/api/backup/import', async (req, res, next) => {
     const fileIds = new Map(); // backup file id -> new row id
     const added = { items: 0, files: 0, shares: 0 };
     const skipped = { items: 0, expired: 0 };
+    const wsCtx = { goalIds: new Map(), topicIds: new Map(), added, skipped };
     let seenMeta = false;
     let ended = false;
 
@@ -829,6 +837,8 @@ app.post('/api/backup/import', async (req, res, next) => {
         added.shares += r.rowCount;
       } else if (o.type === 'end') {
         ended = true;
+      } else {
+        await workspace.importLine(client, o, wsCtx); // goals, topics, plan tasks, weeks, diary
       }
     }
 

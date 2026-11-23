@@ -12,6 +12,8 @@
   <script src="/theme.js"></script>
   <link rel="stylesheet" href="/tokens.css">
   <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/workspace.css">
+  <link rel="stylesheet" href="/paper.css">
 </head>
 <body>
 
@@ -35,6 +37,7 @@
     <header class="top">
       <div class="top-in">
         <div class="brand">
+          <button class="icon-btn menu-btn" id="menuBtn" type="button" aria-label="Open the side panel" aria-expanded="false"></button>
           <svg viewBox="0 0 128 128" width="26" height="26" aria-hidden="true"><use href="/icons/icon.svg#m"/></svg>
           <span>Clipboard</span>
         </div>
@@ -46,13 +49,16 @@
         <div class="top-actions">
           <div class="live" id="live" role="status" title="Live sync"><i></i><span>Connecting</span></div>
           <button class="icon-btn" id="backupBtn" type="button" aria-label="Backup and restore" title="Backup and restore"></button>
-          <button class="icon-btn" id="themeBtn" type="button" aria-label="Switch theme" title="Switch theme"></button>
+          <button class="icon-btn" id="themeBtn" type="button" aria-label="Theme" title="Theme" aria-haspopup="menu"></button>
           <button class="icon-btn hidden" id="installBtn" type="button" aria-label="Install app" title="Install app"></button>
           <button class="icon-btn" id="logoutBtn" type="button" aria-label="Log out" title="Log out"></button>
         </div>
       </div>
     </header>
 
+    <div class="body">
+    <aside id="side" class="side" aria-label="Side panel"></aside>
+    <div class="content">
     <section class="main" id="main">
       <form id="composer" class="composer" autocomplete="off">
         <textarea id="newText" rows="1" placeholder="Paste, type, or drop a file here" aria-label="New entry"></textarea>
@@ -77,6 +83,11 @@
       <div id="feed" class="feed"></div>
       <div id="empty" class="empty hidden"></div>
     </section>
+    <section class="main wide hidden" id="planMain" aria-label="Plan"></section>
+    <section class="main wide hidden" id="diaryMain" aria-label="Diary"></section>
+    </div>
+    </div>
+    <div id="scrim" class="scrim hidden"></div>
   </div>
 
   <input type="file" id="picker" multiple class="hidden">
@@ -91,5 +102,8 @@
   <div id="veil" class="veil hidden"><div><b>Drop to save</b><span>Drop on an entry to attach, or anywhere else for a new one</span></div></div>
 
   <script src="/app.js" defer></script>
+  <script src="/panel.js" defer></script>
+  <script src="/plan.js" defer></script>
+  <script src="/diary.js" defer></script>
 </body>
 </html>

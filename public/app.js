@@ -35,6 +35,13 @@
     undo: '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>',
     database: '<ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5"/><path d="M3 12a9 3 0 0 0 18 0"/>',
     upload: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/>',
+    menu: '<line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="6" y2="6"/><line x1="4" x2="20" y1="18" y2="18"/>',
+    calendar: '<rect width="18" height="18" x="3" y="4" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>',
+    book: '<path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>',
+    target: '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>',
+    arrow: '<path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>',
+    flame: '<path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.07-2.14-.22-4.05 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.15.43-2.29 1-3a2.5 2.5 0 0 0 2.5 2.5z"/>',
+    palette: '<circle cx="13.5" cy="6.5" r=".5"/><circle cx="17.5" cy="10.5" r=".5"/><circle cx="8.5" cy="7.5" r=".5"/><circle cx="6.5" cy="12.5" r=".5"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/>',
     infinity: '<path d="M18.178 8c5.096 0 5.096 8 0 8-5.095 0-7.133-8-12.739-8-4.585 0-4.585 8 0 8 5.606 0 7.644-8 12.74-8z"/>',
   };
 
@@ -214,6 +221,7 @@
     const m = h('div', { class: 'menu', role: 'menu' });
     if (head) m.append(h('div', { class: 'mhead' }, head));
     for (const o of options) {
+      if (o.head) { m.append(h('div', { class: 'mhead' }, o.head)); continue; }
       m.append(h('button', {
         type: 'button', role: o.radio ? 'menuitemradio' : 'menuitem', 'aria-checked': o.radio ? String(!!o.checked) : null,
         onclick: () => { closeMenu(); o.onSelect(); },
@@ -250,7 +258,7 @@
     const res = await fetch(path, { credentials: 'same-origin', method: opts.method || 'GET', headers, body });
     if (res.status === 401 && !path.includes('/login')) { showLogin(); throw new Error('Logged out'); }
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error || 'Something went wrong');
+    if (!res.ok) { const err = new Error(data.error || 'Something went wrong'); err.status = res.status; err.data = data; throw err; }
     return data;
   }
 
@@ -275,12 +283,24 @@
 
   const fail = (e) => { if (e.message !== 'Logged out') toast(e.message, { err: true }); };
 
+  /* Bridge for the planner, diary and side panel (panel.js, plan.js, diary.js). They are separate files so this one stays small. */
+  const CB = (window.CB = {
+    $, h, icon, ICONS, store, api, toast, fail, openMenu, closeMenu, arm, iconBtn, S, MOD, trunc,
+    cmds: [], mods: [], started: false,
+    use(m) { this.mods.push(m); if (this.started && m.start) m.start(); },
+    start() { this.started = true; for (const m of this.mods) if (m.start) m.start(); },
+    stop() { this.started = false; for (const m of this.mods) if (m.stop) m.stop(); },
+    reload: (t) => scheduleRefresh(t),
+  });
+
   /* ================= data flow ================= */
   let refreshTimer = null;
   let refreshing = false;
   let again = false;
 
-  function scheduleRefresh() {
+  let pendingTypes = new Set();
+  function scheduleRefresh(type = '') {
+    pendingTypes.add(type);
     clearTimeout(refreshTimer);
     refreshTimer = setTimeout(refresh, 80);
   }
@@ -288,17 +308,24 @@
   async function refresh() {
     if (refreshing) { again = true; return; }
     refreshing = true;
+    const types = pendingTypes;
+    pendingTypes = new Set();
     try {
-      const d = await api('/api/items');
-      S.offset = Date.parse(d.now) - Date.now();
-      S.items = d.items;
-      S.trash = d.trash || [];
-      S.trashDays = d.trash_days || 30;
-      S.loaded = true;
-      render();
-      S.flash = true; // from now on, entries that arrive get the "new" highlight (not the first load)
-      if (S.share) renderShare();
-      if (S.light) renderLight();
+      // planner and diary changes do not touch the clipboard entries, so skip that request for them
+      const onlyWorkspace = types.size > 0 && [...types].every((t) => t === 'plan' || t === 'diary');
+      if (!onlyWorkspace) {
+        const d = await api('/api/items');
+        S.offset = Date.parse(d.now) - Date.now();
+        S.items = d.items;
+        S.trash = d.trash || [];
+        S.trashDays = d.trash_days || 30;
+        S.loaded = true;
+        render();
+        S.flash = true; // from now on, entries that arrive get the "new" highlight (not the first load)
+        if (S.share) renderShare();
+        if (S.light) renderLight();
+      }
+      for (const m of CB.mods) if (m.refresh) m.refresh(types);
     } catch (e) {
       if (e.message !== 'Logged out') console.warn(e);
     } finally {
@@ -317,8 +344,12 @@
     if (S.es) S.es.close();
     const es = new EventSource('/api/events');
     S.es = es;
-    es.addEventListener('open', () => { setLive(true); scheduleRefresh(); });
-    es.addEventListener('change', scheduleRefresh);
+    es.addEventListener('open', () => { setLive(true); scheduleRefresh('open'); });
+    es.addEventListener('change', (e) => {
+      let type = '';
+      try { type = JSON.parse(e.data).type || ''; } catch { /* plain change */ }
+      scheduleRefresh(type);
+    });
     es.addEventListener('error', async () => {
       setLive(false);
       if (es.readyState === EventSource.CLOSED) {
@@ -506,6 +537,7 @@
   function showLogin() {
     if (S.es) { S.es.close(); S.es = null; }
     S.items = []; S.trash = []; S.info = null; S.loaded = false; S.flash = false;
+    CB.stop();
     known.clear();
     $('#feed').replaceChildren();
     $('#shelf').replaceChildren();
@@ -518,6 +550,7 @@
     $('#login').classList.add('hidden');
     $('#app').classList.remove('hidden');
     render();
+    CB.start();
     refresh();
     connectEvents();
     setTimeout(loadBackupInfo, 4000); // not needed to draw the page
@@ -537,16 +570,35 @@
   $('#logoutBtn').addEventListener('click', async () => { try { await api('/api/logout', { method: 'POST' }); } catch { /* ignore */ } showLogin(); });
 
   /* ================= theme ================= */
-  function applyTheme(t) {
-    document.documentElement.dataset.theme = t;
-    store.set('theme', t);
-    const m = $('meta[name="theme-color"]');
-    if (m) m.content = t === 'light' ? '#b9864a' : '#6a4727';
-    $('#themeBtn').replaceChildren(icon(t === 'light' ? 'moon' : 'sun'));
-    $('#themeBtn').title = t === 'light' ? 'Switch to dark theme' : 'Switch to light theme';
+  const Theme = window.Theme;
+  const MODE_LABEL = { auto: 'Auto', light: 'Light', dark: 'Dark' };
+  const STYLE_LABEL = { wood: 'Wood', paper: 'Paper' };
+  function paintThemeBtn() {
+    $('#themeBtn').replaceChildren(icon('palette'));
+    $('#themeBtn').title = `Theme: ${STYLE_LABEL[Theme.style]}, ${MODE_LABEL[Theme.mode].toLowerCase()}${Theme.mode === 'auto' ? ` (${Theme.resolve()} now)` : ''}`;
   }
-  const toggleTheme = () => applyTheme(document.documentElement.dataset.theme === 'light' ? 'dark' : 'light');
-  $('#themeBtn').addEventListener('click', toggleTheme);
+  const pickMode = (m) => { Theme.setMode(m); paintThemeBtn(); };
+  const pickStyle = (st) => { Theme.setStyle(st); paintThemeBtn(); };
+  function openThemeMenu() {
+    const anchor = $('#themeBtn');
+    openMenu(anchor, null, [
+      { head: 'Style' },
+      ...Object.entries(STYLE_LABEL).map(([v, label]) => ({ label: v === 'wood' ? 'Wood shelves' : 'Plain paper', radio: true, checked: Theme.style === v, onSelect: () => pickStyle(v) })),
+      { head: 'Light or dark' },
+      { label: 'Auto: light by day, dark from 7 pm', radio: true, checked: Theme.mode === 'auto', onSelect: () => pickMode('auto') },
+      { label: 'Always light', radio: true, checked: Theme.mode === 'light', onSelect: () => pickMode('light') },
+      { label: 'Always dark', radio: true, checked: Theme.mode === 'dark', onSelect: () => pickMode('dark') },
+    ]);
+  }
+  $('#themeBtn').addEventListener('click', openThemeMenu);
+  // auto mode follows the clock: check every minute and when the app comes back to the front
+  function followClock() {
+    if (Theme.mode !== 'auto') return;
+    const before = document.documentElement.dataset.theme;
+    if (Theme.apply() !== before) paintThemeBtn();
+  }
+  setInterval(followClock, 60000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) followClock(); });
 
   /* ================= rendering ================= */
   /* ================= rendering ================= */
@@ -570,6 +622,7 @@
   }
 
   function setView(id) {
+    if (CB.setSection && CB.section !== 'clip') CB.setSection('clip');
     S.view = id;
     store.set('view', id);
     render();
@@ -1197,9 +1250,14 @@
         label: v === 'keep' ? 'Keep new entries forever' : `Delete new entries after ${label}`,
         hint: S.ttl === v ? 'Current' : '', run: () => { S.ttl = v; store.set('ttl', v); renderFusePick(); toast('Updated'); },
       })),
+      ...CB.cmds.flatMap((f) => f()),
       { group: 'App', icon: 'download', label: 'Download backup', run: downloadBackup },
       { group: 'App', icon: 'upload', label: 'Restore from a backup file', run: openBackup },
-      { group: 'App', icon: document.documentElement.dataset.theme === 'light' ? 'moon' : 'sun', label: 'Switch theme', run: toggleTheme },
+      { group: 'Theme', icon: 'palette', label: 'Theme: wood shelves', hint: Theme.style === 'wood' ? 'Current' : '', run: () => pickStyle('wood') },
+      { group: 'Theme', icon: 'palette', label: 'Theme: plain paper', hint: Theme.style === 'paper' ? 'Current' : '', run: () => pickStyle('paper') },
+      { group: 'Theme', icon: 'sun', label: 'Theme: auto light and dark', hint: Theme.mode === 'auto' ? 'Current' : '', run: () => pickMode('auto') },
+      { group: 'Theme', icon: 'sun', label: 'Theme: always light', hint: Theme.mode === 'light' ? 'Current' : '', run: () => pickMode('light') },
+      { group: 'Theme', icon: 'moon', label: 'Theme: always dark', hint: Theme.mode === 'dark' ? 'Current' : '', run: () => pickMode('dark') },
       { group: 'App', icon: 'logout', label: 'Log out', run: () => $('#logoutBtn').click() },
     ];
     for (const c of cmds) if (!ql || c.label.toLowerCase().includes(ql) || c.group.toLowerCase().includes(ql)) rows.push(c);
@@ -1351,12 +1409,14 @@
           h('div', { class: 'b-stat' }, h('b', {}, fmtSize(info.bytes)), h('span', {}, 'file data'))),
         h('p', { class: 'b-note' },
           [age == null ? null : `Database set up ${agoText(age)}.`, last == null ? 'No backup downloaded yet.' : `Last backup ${agoText(last)}.`,
-            info.trashed ? `${plural(info.trashed, 'entry', 'entries')} in the trash.` : null].filter(Boolean).join(' ')));
+            info.trashed ? `${plural(info.trashed, 'entry', 'entries')} in the trash.` : null,
+            info.goals ? `${plural(info.goals, 'goal')} with ${plural(info.plan_tasks, 'planned day')}.` : null,
+            info.diary ? `${plural(info.diary, 'diary entry', 'diary entries')}.` : null].filter(Boolean).join(' ')));
     }
 
     body.append(h('div', { class: 'b-sec' },
       h('h3', {}, 'Download a backup'),
-      h('p', {}, 'One file with every entry, file, pin, trashed entry and share link. Keep it somewhere safe.'),
+      h('p', {}, 'One file with every entry, file, pin, trashed entry and share link, plus your goals, plan and diary. Keep it somewhere safe.'),
       h('button', { type: 'button', class: 'btn primary', onclick: downloadBackup }, icon('download', 'sm'), 'Download backup')));
 
     const f = st.file;
@@ -1378,8 +1438,15 @@
     if (!r.ok) return r.error;
     const a = r.added || {};
     const s = r.skipped || {};
-    if (!a.items) return s.items ? `Nothing new to restore. All ${plural(s.items, 'entry', 'entries')} in this backup are already here.` : 'This backup has no entries to restore.';
-    const parts = [`Restored ${plural(a.items, 'entry', 'entries')} and ${plural(a.files, 'file')}.`];
+    const wsAdded = (a.goals || 0) + (a.tasks || 0) + (a.diary || 0) + (a.weeks || 0);
+    if (!a.items && !wsAdded) {
+      const here = (s.items || 0) + (s.goals || 0) + (s.tasks || 0) + (s.diary || 0);
+      return here ? 'Nothing new to restore. Everything in this backup is already here.' : 'This backup has nothing to restore.';
+    }
+    const parts = [];
+    if (a.items || a.files) parts.push(`Restored ${plural(a.items, 'entry', 'entries')} and ${plural(a.files, 'file')}.`);
+    if (a.goals || a.tasks) parts.push(`Restored ${plural(a.goals || 0, 'goal')} and ${plural(a.tasks || 0, 'planned day')}.`);
+    if (a.diary) parts.push(`Restored ${plural(a.diary, 'diary entry', 'diary entries')}.`);
     if (s.items) parts.push(`${s.items} ${s.items === 1 ? 'was' : 'were'} already here.`);
     if (s.expired) parts.push(`${s.expired} had already auto-deleted.`);
     return parts.join(' ');
@@ -1399,7 +1466,7 @@
       }, 'application/octet-stream');
       st.result = { ok: true, ...r };
       st.file = null;
-      scheduleRefresh();
+      scheduleRefresh('import');
       loadBackupInfo();
     } catch (e) { st.result = { ok: false, error: e.message }; }
     st.busy = false;
@@ -1446,7 +1513,7 @@
   $('#logoutBtn').append(icon('logout'));
   $('#backupBtn').append(icon('database'));
   $('#backupBtn').addEventListener('click', openBackup);
-  applyTheme(document.documentElement.dataset.theme === 'light' ? 'light' : 'dark');
+  paintThemeBtn();
   renderFusePick();
   renderTaskToggle();
   autosize();

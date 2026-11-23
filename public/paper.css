@@ -1,0 +1,101 @@
+/* Paper style: flat and quiet. Warm off-white (or warm charcoal at night), dark ink, one accent.
+ * Everything here is scoped to data-style="paper", so the wood style is untouched. */
+:root[data-style='paper'][data-theme='light'] {
+  --wall: #f6f1e7; --seam: transparent; --grain: transparent;
+  --bg: #f6f1e7; --rail: #f6f1e7; --surface: #fffdf8; --raised: #ffffff; --inset: #f1ebdd;
+  --line: #ddd3bf; --line-soft: #e9e1d0;
+  --text: #26211a; --muted: #5f5646; --faint: #8a8070; --beam-text: #26211a;
+  --accent: #a8541f; --accent-ink: #fffdf8; --accent-wash: rgba(168, 84, 31, .11);
+  --pin: #a8541f; --pin-wash: rgba(168, 84, 31, .11);
+  --ok: #3b7a35; --warn: #a86c0a; --danger: #b3362d; --danger-wash: rgba(179, 54, 45, .1);
+  --shadow: 0 14px 36px rgba(60, 45, 20, .22);
+}
+:root[data-style='paper'][data-theme='dark'] {
+  --wall: #1b1a17; --seam: transparent; --grain: transparent;
+  --bg: #1b1a17; --rail: #1b1a17; --surface: #25241f; --raised: #2d2b26; --inset: #1f1e1b;
+  --line: #3d3a33; --line-soft: #322f29;
+  --text: #ece6d8; --muted: #b3aa97; --faint: #857d6c; --beam-text: #ece6d8;
+  --accent: #e08a4a; --accent-ink: #1b1a17; --accent-wash: rgba(224, 138, 74, .15);
+  --pin: #e08a4a; --pin-wash: rgba(224, 138, 74, .15);
+  --ok: #93d482; --warn: #f2b650; --danger: #ff9486; --danger-wash: rgba(255, 148, 134, .14);
+  --shadow: 0 14px 36px rgba(0, 0, 0, .55);
+}
+:root[data-style='paper'] {
+  --plank-hi: var(--line); --plank: var(--line); --plank-lo: var(--line);
+  --tack-hi: var(--accent); --tack: var(--accent); --tack-lo: var(--accent);
+  --plank-bg: linear-gradient(var(--surface), var(--surface));
+  --card-shadow: 0 1px 2px rgba(0, 0, 0, .07), 0 6px 14px -10px rgba(0, 0, 0, .2);
+}
+:root[data-style='paper'][data-theme='dark'] { --card-shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 6px 14px -10px rgba(0, 0, 0, .6); }
+
+html[data-style='paper'] { background-image: none; background-color: var(--bg); }
+html[data-style='paper'] .brand, html[data-style='paper'] .shelf-title, html[data-style='paper'] .feed-title, html[data-style='paper'] .empty h2,
+html[data-style='paper'] .login-brand h1, html[data-style='paper'] dialog.dlg h2, html[data-style='paper'] .b-sec h3,
+html[data-style='paper'] .ws-card h3, html[data-style='paper'] .side-card h3, html[data-style='paper'] .nav-label h2,
+html[data-style='paper'] .cal-title, html[data-style='paper'] .wk-head b, html[data-style='paper'] .dl-d b, html[data-style='paper'] .list-head { font-family: var(--font); }
+html[data-style='paper'] .shelf-title, html[data-style='paper'] .feed-title, html[data-style='paper'] .nav-label h2 { text-shadow: none; }
+html[data-style='paper'] .shelf-title .ic { color: var(--pin); }
+
+/* top bar: a plain strip */
+html[data-style='paper'] .top { background: var(--surface); color: var(--text); border-bottom: 1px solid var(--line); box-shadow: none; }
+html[data-style='paper'] .brand { color: var(--text); font-weight: 700; }
+html[data-style='paper'] .top .icon-btn, html[data-style='paper'] .live { color: var(--muted); }
+html[data-style='paper'] .top .icon-btn:hover { background: var(--accent-wash); color: var(--text); }
+html[data-style='paper'] .icon-btn .dot { box-shadow: 0 0 0 2px var(--surface); }
+html[data-style='paper'] .search-btn { background: var(--inset); border: 1px solid var(--line); box-shadow: none; }
+
+/* every card is flat paper with a hairline border */
+html[data-style='paper'] .composer, html[data-style='paper'] .entry, html[data-style='paper'] .login-card, html[data-style='paper'] .viewbar,
+html[data-style='paper'] .ws-card, html[data-style='paper'] .side-card {
+  background: var(--paper) !important; background-image: none !important;
+  border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--card-shadow);
+}
+html[data-style='paper'] .composer { padding: 14px 16px 12px; }
+html[data-style='paper'] .viewbar { padding: 10px 14px; }
+html[data-style='paper'] .entry { padding: 14px 16px; margin-bottom: 14px; }
+html[data-style='paper'] .entry.tile { padding: 16px 14px; margin: 0; }
+html[data-style='paper'] .ws-card { padding: 16px 18px 18px; }
+html[data-style='paper'] .side-card { padding: 12px 14px 14px; }
+html[data-style='paper'] .login-card { padding: 28px; }
+html[data-style='paper'] .composer:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-wash); }
+html[data-style='paper'] .entry.tile::before { display: none; }
+html[data-style='paper'] .entry.is-pinned { border-color: color-mix(in srgb, var(--pin) 55%, var(--line)); box-shadow: var(--card-shadow); }
+html[data-style='paper'] .ws-card.behind { border-color: color-mix(in srgb, var(--danger) 60%, var(--line)); box-shadow: var(--card-shadow); }
+html[data-style='paper'] .ws-card.weekend { --paper: color-mix(in srgb, var(--accent) 6%, var(--surface)); }
+html[data-style='paper'] .fuse, html[data-style='paper'] .tile .fuse { border-radius: 12px 12px 0 0; }
+html[data-style='paper'] .wk-day { box-shadow: var(--card-shadow); }
+html[data-style='paper'] .wk-day.today { box-shadow: 0 0 0 2px var(--accent); }
+html[data-style='paper'] .bar { box-shadow: none; }
+
+/* tabs: text with an underline on the open one */
+html[data-style='paper'] .tabs { background: none; box-shadow: none; border-radius: 0; padding: 0; margin: 18px 0 12px; border-bottom: 1px solid var(--line); gap: 2px; }
+html[data-style='paper'] .tabs button { color: var(--muted); border-radius: 6px 6px 0 0; border-bottom: 2px solid transparent; margin-bottom: -1px; padding: 8px 12px 9px; }
+html[data-style='paper'] .tabs button:hover { background: var(--accent-wash); color: var(--text); }
+html[data-style='paper'] .tabs button[aria-current='true'] { background: none; color: var(--text); font-weight: 650; border-bottom-color: var(--accent); box-shadow: none; }
+
+/* side panel navigation */
+html[data-style='paper'] .side-nav { background: none; box-shadow: none; padding: 0; gap: 2px; }
+html[data-style='paper'] .side-tab { color: var(--text); border-radius: 8px; }
+html[data-style='paper'] .side-tab:hover { background: var(--accent-wash); }
+html[data-style='paper'] .side-tab[aria-current='true'] { background: var(--accent-wash); color: var(--text); font-weight: 650; box-shadow: inset 3px 0 0 var(--accent); }
+html[data-style='paper'] .badge-dot { box-shadow: 0 0 0 2px var(--bg); }
+html[data-style='paper'] .side { border-right-color: var(--line); }
+@media (max-width: 999px) { html[data-style='paper'] .side { border-right: 1px solid var(--line); } }
+
+/* buttons and small things */
+html[data-style='paper'] .btn { background: var(--surface); }
+html[data-style='paper'] .btn.primary { background: var(--accent); color: var(--accent-ink); border: 1px solid var(--accent); box-shadow: none; font-weight: 600; }
+html[data-style='paper'] .btn.primary:active { transform: none; box-shadow: none; }
+html[data-style='paper'] .btn.armed { background: var(--danger); border-color: var(--danger); color: #fff; }
+html[data-style='paper'] .chip-btn { background: var(--surface); }
+html[data-style='paper'] .bar i, html[data-style='paper'] .hist-bar i { background: var(--accent); }
+html[data-style='paper'] .bar.we i { background: var(--ok); }
+html[data-style='paper'] .check-line input { accent-color: var(--accent); }
+html[data-style='paper'] dialog.dlg { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); }
+html[data-style='paper'] dialog.dlg::backdrop { background: rgba(20, 16, 10, .5); }
+html[data-style='paper'] .menu { background: var(--raised); border-radius: 10px; }
+html[data-style='paper'] .toast { background: var(--text); color: var(--bg); border: 0; border-radius: 10px; }
+html[data-style='paper'] .toast button { color: inherit; }
+html[data-style='paper'] .toast button:hover { background: rgba(127, 127, 127, .25); }
+html[data-style='paper'] .scrim { background: rgba(20, 16, 10, .45); }
+html[data-style='paper'] .yd.w { background: var(--faint); }
