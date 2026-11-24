@@ -78,3 +78,16 @@ Files live in the backup too, so it can be large. Share links keep working as lo
 - Free Render Postgres has been time-limited (30 days, as far as I know). Check current terms, or point `DATABASE_URL` at a free Neon or Supabase Postgres.
 - Share links are unguessable (144-bit random) and send `noindex`, but anyone who has the link can open it until it expires. Revoke it from the share dialog if you sent it by mistake.
 - Fonts (Geist) are bundled in `public/fonts`, so nothing loads from third-party sites.
+
+
+## v1.3: hours, habits, weekends, easier to learn
+
+- **Plan by time.** Every task can have a time ("Gym 1h", "Read 30m", "half day"). Each day shows its load against a full day (8h by default, changeable). Goal parts take hours or days ("3h", "90m", "2 days").
+- **Moving joins what is there.** A day can hold many things; goal parts fill a day up to its time per day and the next part joins the same day if it fits.
+- **Habits tab.** Repeat things every day, weekdays, weekends or chosen days, with streaks and a 14-day strip. Created from the Add dialog ("More...") or the Habits tab.
+- **Weekend tab.** Saturday and Sunday together, one tap to carry what is left to next weekend, drag onto other weekends. Goals can use "Weekends only".
+- **Missed box.** Lists unfinished one-off and goal tasks; "Fit into free time" gives each the nearest day with room.
+- **Easier to learn.** Visible Add / More buttons, hints on each tab, a "?" help dialog, starter examples, plainer words.
+- Side panel no longer overflows with long titles.
+- Upgrades existing data automatically (old topic days become full days; "weekends too" becomes every day). Backup format 3 still restores older backups.
+- Feedback on tasks: leave a hidden note via the ... menu; it shows only as a small "feedback" chip until clicked (v1.3.1).

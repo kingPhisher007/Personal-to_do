@@ -129,16 +129,16 @@
       const list = h('ul', { class: 'mini-tasks' });
       for (const t of tasks.slice(0, 7)) list.append(h('li', { class: t.done ? 'done' : '' },
         h('button', { type: 'button', class: 'pt-check', role: 'checkbox', 'aria-checked': String(t.done), 'aria-label': t.title, onclick: () => P.toggle(t) }, icon('check')),
-        h('button', { type: 'button', class: 'mt-title', onclick: () => CB.openDay(today) }, t.title)));
+        h('button', { type: 'button', class: 'mt-title', title: t.title, onclick: () => CB.openDay(today) }, t.title),
+        t.mins ? h('span', { class: 'mt-time' }, P.fmtMins(t.mins)) : null));
       card.append(list);
       if (tasks.length > 7) card.append(h('button', { type: 'button', class: 'link-btn', onclick: () => CB.openDay(today) }, `${tasks.length - 7} more`));
     } else card.append(h('p', { class: 'muted' }, 'Nothing planned for today.'));
-    const input = h('input', { type: 'text', class: 'mini-add', placeholder: 'Add a task for today', maxlength: '300', 'aria-label': 'Add a task for today' });
-    input.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && !e.isComposing && input.value.trim()) { const v = input.value.trim(); input.value = ''; CB.sideRefocus = true; P.addTask(today, v); }
-    });
-    card.append(input);
-    if (behind) card.append(h('button', { type: 'button', class: 'warn-line', onclick: () => { P.tab = 'today'; CB.openDay(today); } }, icon('clock', 'sm'), `${behind} ${behind === 1 ? 'task is' : 'tasks are'} behind`, icon('arrow', 'sm')));
+    const input = h('input', { type: 'text', class: 'mini-add', placeholder: 'Add a task, e.g. Gym 1h', maxlength: '300', 'aria-label': 'Add a task for today' });
+    const submit = () => { const v = input.value.trim(); if (!v) { input.focus(); return; } input.value = ''; CB.sideRefocus = true; P.addTask(today, v); };
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) submit(); });
+    card.append(h('div', { class: 'mini-row' }, input, h('button', { type: 'button', class: 'btn sm primary', 'aria-label': 'Add task', title: 'Add', onclick: submit }, icon('plus', 'sm'))));
+    if (behind) card.append(h('button', { type: 'button', class: 'warn-line', onclick: () => { P.tab = 'today'; CB.openDay(today); } }, icon('clock', 'sm'), `${behind} ${behind === 1 ? 'task is' : 'tasks are'} missed`, icon('arrow', 'sm')));
     return card;
   }
 

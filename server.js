@@ -19,7 +19,7 @@ const IS_PROD = process.env.NODE_ENV === 'production' || !!process.env.RENDER;
 const SESSION_DAYS = 30;
 const MAX_TTL_SECONDS = 30 * 86400;
 const TRASH_DAYS = Math.max(1, Number(process.env.TRASH_DAYS || 30));
-const BACKUP_FORMAT = 2;
+const BACKUP_FORMAT = 3;
 
 for (const [k, v] of Object.entries({ DATABASE_URL, APP_USER, APP_PASSWORD, SESSION_SECRET })) {
   if (!v) {
@@ -658,7 +658,7 @@ app.get('/api/backup/info', async (req, res, next) => {
       getMeta('last_backup_at'),
     ]);
     const ws = await workspace.exportCounts(pool);
-    res.json({ ...it.rows[0], ...fl.rows[0], ...sh.rows[0], plan_tasks: ws.tasks, goals: ws.goals, diary: ws.diary, db_created_at: created, last_backup_at: last, now: new Date().toISOString() });
+    res.json({ ...it.rows[0], ...fl.rows[0], ...sh.rows[0], plan_tasks: ws.tasks, goals: ws.goals, habits: ws.habits, diary: ws.diary, db_created_at: created, last_backup_at: last, now: new Date().toISOString() });
   } catch (e) { next(e); }
 });
 
