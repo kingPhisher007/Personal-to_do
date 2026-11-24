@@ -1,4 +1,4 @@
-/* Side panel: section switching (Clipboard, Plan, Diary), month calendar, today's tasks and goal progress.
+/* Side panel: section switching (Clipboard, Plan, Logbook), month calendar, today's tasks and goal progress.
  * Also holds the small date helpers the planner and diary share. */
 (() => {
   'use strict';
@@ -33,7 +33,7 @@
   CB.emit = (e, a) => { for (const f of L[e] || []) { try { f(a); } catch (err) { console.error(err); } } };
 
   /* ================= sections ================= */
-  const SECTIONS = [['clip', 'Clipboard', 'inbox'], ['plan', 'Plan', 'target'], ['diary', 'Diary', 'book']];
+  const SECTIONS = [['clip', 'Clipboard', 'inbox'], ['plan', 'Plan', 'target'], ['diary', 'Logbook', 'book']];
   CB.section = store.get('section', 'clip');
   if (!SECTIONS.some(([id]) => id === CB.section)) CB.section = 'clip';
   CB.focusDay = D.today();
@@ -102,7 +102,7 @@
       const st = P && P.loaded ? P.dayStatus(day) : 'none';
       const wrote = Dy && Dy.loaded && Dy.has(day);
       const cls = 'cal-d' + (day === today ? ' today' : '') + (day === CB.focusDay ? ' sel' : '') + (D.isWeekend(day) ? ' we' : '');
-      cells.push(h('button', { type: 'button', class: cls, title: `${D.long(day)}${wrote ? '. Diary written' : ''}`, 'aria-label': D.long(day), onclick: () => CB.openDay(day) },
+      cells.push(h('button', { type: 'button', class: cls, title: `${D.long(day)}${wrote ? '. Logbook written' : ''}`, 'aria-label': D.long(day), onclick: () => CB.openDay(day) },
         h('span', {}, d), h('span', { class: 'dots' }, st !== 'none' ? h('i', { class: 'pd ' + st }) : null, wrote ? h('i', { class: 'dd' }) : null)));
     }
     const shift = (n) => { const dt = new Date(y, m - 1 + n, 1, 12); calMonth = `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}`; renderSide(); };
@@ -180,7 +180,7 @@
   CB.cmds.push(() => [
     { group: 'Go to', icon: 'inbox', label: 'Clipboard', run: () => setSection('clip') },
     { group: 'Go to', icon: 'target', label: 'Plan', run: () => setSection('plan') },
-    { group: 'Go to', icon: 'book', label: 'Diary', run: () => setSection('diary') },
+    { group: 'Go to', icon: 'book', label: 'Logbook', run: () => setSection('diary') },
   ]);
 
   /* ================= lifecycle ================= */

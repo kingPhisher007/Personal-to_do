@@ -1411,12 +1411,12 @@
           [age == null ? null : `Database set up ${agoText(age)}.`, last == null ? 'No backup downloaded yet.' : `Last backup ${agoText(last)}.`,
             info.trashed ? `${plural(info.trashed, 'entry', 'entries')} in the trash.` : null,
             info.goals ? `${plural(info.goals, 'goal')} with ${plural(info.plan_tasks, 'planned day')}.` : null,
-            info.diary ? `${plural(info.diary, 'diary entry', 'diary entries')}.` : null].filter(Boolean).join(' ')));
+            info.diary ? `${plural(info.diary, 'logbook entry', 'logbook entries')}.` : null].filter(Boolean).join(' ')));
     }
 
     body.append(h('div', { class: 'b-sec' },
       h('h3', {}, 'Download a backup'),
-      h('p', {}, 'One file with every entry, file, pin, trashed entry and share link, plus your goals, plan and diary. Keep it somewhere safe.'),
+      h('p', {}, 'One file with every entry, file, pin, trashed entry and share link, plus your goals, plan and logbook. Keep it somewhere safe.'),
       h('button', { type: 'button', class: 'btn primary', onclick: downloadBackup }, icon('download', 'sm'), 'Download backup')));
 
     const f = st.file;
@@ -1446,7 +1446,7 @@
     const parts = [];
     if (a.items || a.files) parts.push(`Restored ${plural(a.items, 'entry', 'entries')} and ${plural(a.files, 'file')}.`);
     if (a.goals || a.tasks) parts.push(`Restored ${plural(a.goals || 0, 'goal')} and ${plural(a.tasks || 0, 'planned day')}.`);
-    if (a.diary) parts.push(`Restored ${plural(a.diary, 'diary entry', 'diary entries')}.`);
+    if (a.diary) parts.push(`Restored ${plural(a.diary, 'logbook entry', 'logbook entries')}.`);
     if (s.items) parts.push(`${s.items} ${s.items === 1 ? 'was' : 'were'} already here.`);
     if (s.expired) parts.push(`${s.expired} had already auto-deleted.`);
     return parts.join(' ');

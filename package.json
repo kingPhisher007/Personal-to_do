@@ -1,6 +1,6 @@
 {
   "name": "clipboard-todo",
-  "version": "1.3.1",
+  "version": "1.3.2",
   "description": "Personal cloud clipboard + todo list with file attachments",
   "main": "server.js",
   "scripts": {

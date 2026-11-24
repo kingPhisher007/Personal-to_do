@@ -648,7 +648,7 @@
       const mv = h('button', { type: 'button', class: 'btn sm', onclick: () => moveMenu(mv, undone.map((t) => t.id), day) }, icon('arrow', 'sm'), `Move ${undone.length} unfinished`);
       foot.append(mv);
     }
-    foot.append(h('button', { type: 'button', class: 'btn sm', onclick: () => { CB.setSection('diary'); if (CB.Dy) CB.Dy.open(day); } }, icon('book', 'sm'), 'Diary for this day'));
+    foot.append(h('button', { type: 'button', class: 'btn sm', onclick: () => { CB.setSection('diary'); if (CB.Dy) CB.Dy.open(day); } }, icon('book', 'sm'), 'Logbook for this day'));
 
     const card = h('section', { class: 'ws-card' + (D.isWeekend(day) ? ' weekend' : '') },
       h('div', { class: 'card-head' }, h('h3', {}, tasks.length ? `${done} of ${tasks.length} done` : 'Nothing planned'),
@@ -752,7 +752,7 @@
         h('div', {}, h('b', {}, n.planned), h('span', {}, 'planned')), h('div', {}, h('b', {}, n.done), h('span', {}, 'done')),
         h('div', {}, h('b', {}, n.undone_ids.length), h('span', {}, 'open')), h('div', {}, h('b', {}, `${n.pct}%`), h('span', {}, 'complete'))),
       review, carry ? h('div', { class: 'card-foot' }, carry) : null,
-      diaryBits.length ? h('div', { class: 'diary-bits' }, h('h4', {}, 'From your diary this week'), h('ul', {}, diaryBits)) : null));
+      diaryBits.length ? h('div', { class: 'diary-bits' }, h('h4', {}, 'From your logbook this week'), h('ul', {}, diaryBits)) : null));
 
     const hist = [];
     for (let i = 7; i >= 0; i--) {

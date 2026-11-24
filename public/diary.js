@@ -172,7 +172,7 @@
     const thisYear = Number(D.today().slice(0, 4));
     host.replaceChildren(h('div', { class: 'nav-row' },
       h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Previous year', onclick: () => gotoYear(Dy.year - 1) }, icon('left')),
-      h('div', { class: 'nav-label' }, h('h2', {}, `Diary ${Dy.year}`), h('span', {}, 'Work, life, and how it is going')),
+      h('div', { class: 'nav-label' }, h('h2', {}, `Logbook ${Dy.year}`), h('span', {}, 'Work, life, and how it is going')),
       h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Next year', disabled: Dy.year >= thisYear ? '' : null, onclick: () => gotoYear(Dy.year + 1) }, icon('right')),
       Dy.year !== thisYear ? h('button', { type: 'button', class: 'btn sm', onclick: () => gotoYear(thisYear) }, 'This year') : null,
       h('span', { class: 'spacer' }),
@@ -228,7 +228,7 @@
     const today = D.today();
     const out = [];
 
-    const body = h('textarea', { class: 'dy-body', placeholder: day === today ? 'How was today? Write anything.' : 'Write about this day.', 'aria-label': 'Diary entry', 'data-min': '170' }, Dy.draft.body);
+    const body = h('textarea', { class: 'dy-body', placeholder: day === today ? 'How was today? Write anything.' : 'Write about this day.', 'aria-label': 'Logbook entry', 'data-min': '170' }, Dy.draft.body);
     body.addEventListener('input', () => { Dy.draft.body = body.value; grow(body); edited(); });
     body.addEventListener('blur', () => { if (Dy.dirty) save(); });
 
@@ -318,7 +318,7 @@
     if (!host) return;
     const keep = document.activeElement && host.contains(document.activeElement) && document.activeElement.classList.contains('dy-search');
     const q = Dy.q.trim();
-    const search = h('input', { type: 'search', class: 'dy-search', placeholder: 'Search the diary', value: Dy.q, 'aria-label': 'Search the diary', autocomplete: 'off' });
+    const search = h('input', { type: 'search', class: 'dy-search', placeholder: 'Search the logbook', value: Dy.q, 'aria-label': 'Search the logbook', autocomplete: 'off' });
     search.addEventListener('input', () => {
       Dy.q = search.value;
       clearTimeout(searchTimer);
@@ -349,8 +349,8 @@
 
   /* ================= wiring ================= */
   CB.cmds.push(() => [
-    { group: 'Diary', icon: 'book', label: 'Diary: write today', run: () => { CB.setSection('diary'); open(D.today()); } },
-    { group: 'Diary', icon: 'search', label: 'Diary: search', run: () => { CB.setSection('diary'); setTimeout(() => { const s = $('.dy-search'); if (s) s.focus(); }, 0); } },
+    { group: 'Logbook', icon: 'book', label: 'Logbook: write today', run: () => { CB.setSection('diary'); open(D.today()); } },
+    { group: 'Logbook', icon: 'search', label: 'Logbook: search', run: () => { CB.setSection('diary'); setTimeout(() => { const s = $('.dy-search'); if (s) s.focus(); }, 0); } },
   ]);
 
   CB.use({

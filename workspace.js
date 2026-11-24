@@ -303,7 +303,7 @@ function cleanSections(v) {
   const o = {};
   const src = v && typeof v === 'object' ? v : {};
   for (const k of SECTION_KEYS) {
-    const s = rawText(src[k], 20000, 'A diary section');
+    const s = rawText(src[k], 20000, 'A logbook section');
     if (s.trim()) o[k] = s;
   }
   return o;
@@ -739,7 +739,7 @@ function mount(app, { pool, notify, getMeta, setMeta }) {
   app.put('/api/diary/day/:day', wrap(async (req, res) => {
     const day = needDay(req.params.day, 'The day');
     const b = req.body || {};
-    const body = rawText(b.body, 100000, 'The diary entry');
+    const body = rawText(b.body, 100000, 'The logbook entry');
     const sections = cleanSections(b.sections);
     const tags = cleanTags(b.tags);
     const mood = b.mood == null || b.mood === '' ? null : intIn(b.mood, 1, 5, 'The mood');
