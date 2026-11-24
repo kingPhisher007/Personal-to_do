@@ -398,3 +398,7 @@ textarea { resize: vertical; line-height: 1.5; }
   .plan-tabs { overflow-x: auto; }
   .plan-tabs button .label { display: inline; }
 }
+
+/* a part joined to the one above shares its day */
+.topic.joined { margin-left: 16px; border-left: 2px solid var(--accent, #d9822b); padding-left: 8px; }
+.topic.joined .tp-n { color: var(--accent, #d9822b); }

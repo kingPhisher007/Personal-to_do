@@ -316,18 +316,15 @@
   /* ----- how long: quick chips plus a box for anything else ----- */
   function timeField({ value = null, days = false, dm = P.dayMins, label = 'How long' }) {
     const opts = [['15m', 15], ['30m', 30], ['1h', 60], ['2h', 120], ['4h', 240], ['Half day', Math.round(dm / 2)], ['Whole day', dm]];
-    const input = h('input', { type: 'text', class: 'tf-in', placeholder: days ? 'or type: 90m, 3h, 2 days' : 'or type: 90m, 3h', 'aria-label': label, autocomplete: 'off' });
+    const input = h('input', { type: 'text', class: 'tf-in', placeholder: days ? 'Type any time: 90m, 1h20, 3h, 2 days' : 'Type any time: 20m, 1h20, 3h', 'aria-label': label, autocomplete: 'off' });
     const chips = h('div', { class: 'chips', role: 'group', 'aria-label': label });
     const val = () => { const v = input.value.trim(); return v ? parseDuration(v, { days, dm, bare: days }) : null; };
     const sync = () => { const m = val(); for (const b of chips.children) b.setAttribute('aria-pressed', String(m != null && Number(b.dataset.m) === m)); };
-    for (const [txt, m] of opts) {
-      chips.append(h('button', { type: 'button', class: 'chip-pick', dataset: { m }, 'aria-pressed': 'false', onclick: () => { input.value = input.value.trim().toLowerCase() === txt.toLowerCase() ? '' : txt; sync(); input.dispatchEvent(new Event('input')); } }, txt));
-    }
     input.addEventListener('input', sync);
     if (value) input.value = value % dm === 0 && value >= dm ? fmtPart(value, dm) : fmtMins(value);
     sync();
     return {
-      el: h('div', { class: 'time-field' }, chips, input), input,
+      el: h('div', { class: 'time-field' }, input), input,
       value: val, empty: () => !input.value.trim(), bad: () => !!input.value.trim() && val() == null,
       setDm(n) { dm = n; },
     };
@@ -354,21 +351,13 @@
   }
 
   /* ================= task rows ================= */
-  function timeMenu(t, anchor) {
-    const dm = P.dayMins;
-    const list = [[15, '15 minutes'], [30, '30 minutes'], [45, '45 minutes'], [60, '1 hour'], [90, '1 hour 30'], [120, '2 hours'], [180, '3 hours'], [240, '4 hours'], [Math.round(dm / 2), 'Half a day'], [dm, 'The whole day']];
-    const seen = new Set();
-    const opts = [];
-    for (const [m, l] of list) { if (seen.has(m)) continue; seen.add(m); opts.push({ label: l, radio: true, checked: t.mins === m, onSelect: () => { t.mins = m; render(); patchTask(t, { mins: m }); } }); }
-    opts.push({ label: 'Other…', icon: 'pencil', onSelect: () => askTime(t) });
-    if (t.mins != null && !t.topic_id) opts.push({ label: 'No time', icon: 'x', onSelect: () => { t.mins = null; render(); patchTask(t, { mins: null }); } });
-    openMenu(anchor, 'How long will it take?', opts);
-  }
+  function timeMenu(t) { askTime(t); }
   function askTime(t) {
     const f = timeField({ value: t.mins, label: 'How long' });
     const err = h('p', { class: 'form-err', role: 'alert' });
-    const form = h('form', { class: 'wd-form', onsubmit: (e) => { e.preventDefault(); const m = f.value(); if (m == null || m < 5 || m > 1440) { err.textContent = 'Use something like 45m, 2h or half day (up to 24 hours).'; return; } dlg.close(); patchTask(t, { mins: m }); } },
-      f.el, err, h('div', { class: 'wd-actions' }, h('button', { type: 'button', class: 'btn', onclick: () => dlg.close() }, 'Cancel'), h('button', { type: 'submit', class: 'btn primary' }, 'Save')));
+    const canClear = !t.topic_id;
+    const form = h('form', { class: 'wd-form', onsubmit: (e) => { e.preventDefault(); if (f.empty() && canClear) { dlg.close(); t.mins = null; render(); patchTask(t, { mins: null }); return; } const m = f.value(); if (m == null || m < 5 || m > 1440) { err.textContent = 'Type any time you like, for example 45m, 2h, 1h20 or half day (up to 24 hours).'; return; } dlg.close(); patchTask(t, { mins: m }); } },
+      f.el, canClear ? h('p', { class: 'muted tiny' }, 'Leave it empty for no time.') : null, err, h('div', { class: 'wd-actions' }, h('button', { type: 'button', class: 'btn', onclick: () => dlg.close() }, 'Cancel'), h('button', { type: 'submit', class: 'btn primary' }, 'Save')));
     const dlg = dialog('How long will it take?', form);
     f.input.focus();
   }
@@ -603,11 +592,17 @@
       h('div', { class: 'load-bar', 'aria-hidden': 'true' }, h('i', { style: `width:${Math.min(100, Math.round((m / dm) * 100))}%` })),
       h('span', {}, over ? `${fmtMins(m)} planned, ${fmtMins(m - dm)} over a full day (` : `${fmtMins(m)} planned of a full day (`, btn, ')'));
   }
-  function dayLenMenu(anchor) {
-    openMenu(anchor, 'How long is a full day for you?', [4, 6, 7, 8, 10, 12].map((n) => ({
-      label: `${n} hours`, radio: true, checked: P.dayMins === n * 60,
-      onSelect: () => { P.dayMins = n * 60; render(); run(() => api('/api/plan/settings', { method: 'PUT', body: { day_mins: n * 60 } })); },
-    })));
+  function dayLenMenu() {
+    const f = timeField({ value: P.dayMins, label: 'A full day' });
+    const err = h('p', { class: 'form-err', role: 'alert' });
+    const form = h('form', { class: 'wd-form', onsubmit: (e) => {
+      e.preventDefault();
+      const m = f.value();
+      if (m == null || m < 30 || m > 1440) { err.textContent = 'Type something like 6h or 7h30 (at least 30 minutes).'; return; }
+      dlg.close(); P.dayMins = m; render(); run(() => api('/api/plan/settings', { method: 'PUT', body: { day_mins: m } }));
+    } }, f.el, err, h('div', { class: 'wd-actions' }, h('button', { type: 'button', class: 'btn', onclick: () => dlg.close() }, 'Cancel'), h('button', { type: 'submit', class: 'btn primary' }, 'Save')));
+    const dlg = dialog('How long is a full day for you?', form);
+    f.input.focus();
   }
 
   /* ================= Day view ================= */
@@ -942,6 +937,7 @@
     tps.forEach((tp, i) => {
       const ts = P.topicStats(tp);
       const from = D.today();
+      const joined = tp.join_prev && i > 0;
       let name;
       if (P.editTopic === tp.id) {
         name = h('input', { type: 'text', class: 'tp-name', value: tp.title, maxlength: '200', 'aria-label': 'Part name' });
@@ -959,13 +955,13 @@
         if (v == null || v < 5 || v > 100000) { time.value = fmtPart(tp.mins, g.day_mins); toast('Try 3h, 90m or 2 days'); return; }
         run(() => api(`/api/plan/topics/${tp.id}`, { method: 'PATCH', body: { mins: v, from } }));
       });
-      table.append(h('li', { class: 'topic' + (ts.total && ts.done === ts.total ? ' done' : '') },
+      table.append(h('li', { class: 'topic' + (ts.total && ts.done === ts.total ? ' done' : '') + (joined ? ' joined' : '') },
         h('span', { class: 'tp-n' }, i + 1), name,
         h('label', { class: 'tp-d' }, time),
         h('span', { class: 'tp-prog' }, `${fmtMins(ts.doneMins)}/${fmtMins(tp.mins)}`),
         h('span', { class: 'tp-act' },
-          iconBtn('left', 'Move up', () => run(() => api(`/api/plan/topics/${tp.id}`, { method: 'PATCH', body: { move: 'up', from } })), 'rot-up' + (i === 0 ? ' dim' : '')),
-          iconBtn('right', 'Move down', () => run(() => api(`/api/plan/topics/${tp.id}`, { method: 'PATCH', body: { move: 'down', from } })), 'rot-down' + (i === tps.length - 1 ? ' dim' : '')),
+          iconBtn('left', joined ? 'Already on the same day as the part above' : 'Join the part above: share its day', () => { if (!joined && i > 0) run(() => api(`/api/plan/topics/${tp.id}`, { method: 'PATCH', body: { join: true, from } })); }, 'rot-up' + (i === 0 || joined ? ' dim' : '')),
+          iconBtn('right', joined ? 'Separate from the part above: its own day' : 'Not joined to the part above', () => { if (joined) run(() => api(`/api/plan/topics/${tp.id}`, { method: 'PATCH', body: { join: false, from } })); }, 'rot-down' + (joined ? '' : ' dim')),
           arm(h('button', { type: 'button', class: 'icon-btn danger', 'aria-label': `Delete ${tp.title}`, title: 'Delete this part' }, icon('trash')), () => run(() => api(`/api/plan/topics/${tp.id}?from=${from}`, { method: 'DELETE' })), 'Delete?'))));
     });
     box.append(tps.length ? table : h('p', { class: 'muted' }, 'No parts yet. Add the first one below.'));
@@ -989,9 +985,12 @@
     // when and for how long
     const dp = dayPicker(g.days_mask, null);
     const apply = h('button', { type: 'button', class: 'btn sm', onclick: () => run(() => api(`/api/plan/goals/${g.id}`, { method: 'PATCH', body: { days_mask: dp.get(), from: today } })).then((r) => r && toast('Plan re-laid on those days')) }, 'Use these days');
-    const perDay = h('select', { 'aria-label': 'Time per day', onchange: (e) => run(() => api(`/api/plan/goals/${g.id}`, { method: 'PATCH', body: { day_mins: Number(e.target.value), from: today } })) },
-      [...new Set([60, 120, 180, 240, 360, 480, 600, P.dayMins, g.day_mins])].sort((a, b) => a - b).map((m) => h('option', { value: m, selected: m === g.day_mins ? '' : null }, m === P.dayMins ? `${fmtMins(m)} (a full day)` : fmtMins(m))));
-    perDay.value = String(g.day_mins);
+    const perDay = h('input', { type: 'text', class: 'tp-time', value: fmtMins(g.day_mins), 'aria-label': 'Time per day', title: 'For example 3h, 90m or 1h20', autocomplete: 'off' });
+    perDay.addEventListener('change', () => {
+      const v = parseDuration(perDay.value, { days: false });
+      if (v == null || v < 30 || v > 1440) { perDay.value = fmtMins(g.day_mins); toast('Try 3h, 90m or 1h20 (at least 30 minutes)'); return; }
+      run(() => api(`/api/plan/goals/${g.id}`, { method: 'PATCH', body: { day_mins: v, from: today } }));
+    });
     box.append(h('div', { class: 'goal-when' },
       h('div', { class: 'field' }, h('span', {}, 'Days it can use'), dp.el, apply),
       h('label', { class: 'field' }, h('span', {}, 'Time to give it each day'), perDay)));

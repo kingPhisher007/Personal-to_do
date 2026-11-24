@@ -123,6 +123,7 @@ async function initSchema(pool) {
     ALTER TABLE goals ADD COLUMN IF NOT EXISTS day_mins INTEGER NOT NULL DEFAULT 480;
     ALTER TABLE goals ADD COLUMN IF NOT EXISTS days_mask INTEGER NOT NULL DEFAULT 31;
     ALTER TABLE topics ADD COLUMN IF NOT EXISTS mins INTEGER NOT NULL DEFAULT 480;
+    ALTER TABLE topics ADD COLUMN IF NOT EXISTS join_prev BOOLEAN NOT NULL DEFAULT FALSE;
     ALTER TABLE plan_tasks ADD COLUMN IF NOT EXISTS mins INTEGER;
     ALTER TABLE plan_tasks ADD COLUMN IF NOT EXISTS habit_id INTEGER REFERENCES habits(id) ON DELETE SET NULL;
     ALTER TABLE plan_tasks ADD COLUMN IF NOT EXISTS occ_day DATE;
@@ -169,7 +170,7 @@ async function reflow(client, goalId, fromDay, countMoves) {
   if (from < g.start_date) from = g.start_date;
   const mask = g.days_mask & ALL_DAYS || 31;
   const cap = Math.max(30, g.day_mins);
-  const topics = (await client.query('SELECT id, title, mins FROM topics WHERE goal_id = $1 ORDER BY position, id', [goalId])).rows;
+  const topics = (await client.query('SELECT id, title, mins, join_prev FROM topics WHERE goal_id = $1 ORDER BY position, id', [goalId])).rows;
   const all = (await client.query(
     'SELECT id, topic_id, day, done, manual, mins FROM plan_tasks WHERE goal_id = $1 ORDER BY topic_id, seq, id', [goalId])).rows;
   const used = new Map();
@@ -186,12 +187,27 @@ async function reflow(client, goalId, fromDay, countMoves) {
   const inserts = []; // [topic, day, mins, seq]
   const deletes = [];
   let d = from;
+  let prevLast = null; // the last day the part above runs on, so a joined part can share it
   for (const tp of topics) {
     const flow = mapEntry(byTopic, tp.id);
+    let myLast = null;
+    for (const t of all) if (t.topic_id === tp.id && (t.done || t.manual) && (!myLast || t.day > myLast)) myLast = t.day;
     const fixedCount = all.filter((t) => t.topic_id === tp.id && (t.done || t.manual)).length;
     let rem = Math.max(0, tp.mins - (fixedMins.get(tp.id) || 0));
     const chunks = [];
+    let first = true;
     while (rem > 0) {
+      // a part you joined to the one above starts on that part's day, even when the day is already full (it shows as over)
+      if (first && tp.join_prev && prevLast && prevLast >= from && maskHas(mask, prevLast)) {
+        const take = Math.min(rem, cap);
+        chunks.push({ day: prevLast, mins: take });
+        use(prevLast, take);
+        rem -= take;
+        first = false;
+        if (cap - (used.get(prevLast) || 0) < 15 && d <= prevLast) d = addDays(prevLast, 1);
+        continue;
+      }
+      first = false;
       // a part that fits in one day is kept whole, so it moves to the next day with room instead of being cut in two;
       // a part longer than a day starts on a day with a full day free and runs on from there
       const need = Math.min(rem, cap);
@@ -205,6 +221,8 @@ async function reflow(client, goalId, fromDay, countMoves) {
       rem -= take;
       if (cap - (used.get(d) || 0) < 15) d = addDays(d, 1); // a day with room left lets the next part join it
     }
+    for (const ch of chunks) if (!myLast || ch.day > myLast) myLast = ch.day;
+    prevLast = myLast || prevLast;
     chunks.forEach((ch, i) => {
       const seq = fixedCount + i + 1;
       if (flow[i]) updates.push([flow[i].id, ch.day, ch.mins, seq, flow[i].day]);
@@ -347,7 +365,7 @@ function mount(app, { pool, notify, getMeta, setMeta }) {
     await tx((c) => ensureHabits(c, todayOf(req.query.today)));
     const [goals, topics, tasks, weeks, thr, habits, dm] = await Promise.all([
       pool.query(`SELECT ${GOAL_COLS} FROM goals ORDER BY archived, start_date DESC, id DESC`),
-      pool.query('SELECT id, goal_id, title, days, position, mins FROM topics ORDER BY goal_id, position, id'),
+      pool.query('SELECT id, goal_id, title, days, position, mins, join_prev FROM topics ORDER BY goal_id, position, id'),
       pool.query(`SELECT ${TASK_COLS} FROM plan_tasks ORDER BY day, id LIMIT 20000`),
       pool.query('SELECT week_start AS start, focus, outcome, review, rating FROM week_notes ORDER BY week_start DESC LIMIT 400'),
       getMeta('plan_threshold'),
@@ -470,6 +488,13 @@ function mount(app, { pool, notify, getMeta, setMeta }) {
       if (b.mins !== undefined || b.days !== undefined) {
         const mins = partMins(b, tp.day_mins);
         await c.query('UPDATE topics SET mins = $2, days = $3 WHERE id = $1', [id, mins, daysFor(mins, tp.day_mins)]);
+        relay = true;
+      }
+      if (typeof b.join === 'boolean') {
+        await renumberTopics(c, tp.goal_id);
+        const cur = (await c.query('SELECT position FROM topics WHERE id = $1', [id])).rows[0].position;
+        if (b.join && cur <= 1) throw bad('There is no part above this one to join');
+        await c.query('UPDATE topics SET join_prev = $2 WHERE id = $1', [id, b.join]);
         relay = true;
       }
       if (b.move === 'up' || b.move === 'down') {
@@ -778,10 +803,10 @@ async function* exportLines(client) {
   for (const g of goals.rows) {
     yield { type: 'goal', uid: g.uid, title: g.title, start_date: g.start_date, days: g.days, weekends: g.weekends, notes: g.notes, archived: g.archived, created_at: g.created_at, day_mins: g.day_mins, days_mask: g.days_mask };
   }
-  const topics = await client.query('SELECT id, uid, goal_id, title, days, position, created_at, mins FROM topics ORDER BY goal_id, position, id');
+  const topics = await client.query('SELECT id, uid, goal_id, title, days, position, created_at, mins, join_prev FROM topics ORDER BY goal_id, position, id');
   const topicUid = new Map(topics.rows.map((t) => [t.id, t.uid]));
   for (const t of topics.rows) {
-    yield { type: 'topic', uid: t.uid, goal_uid: goalUid.get(t.goal_id), title: t.title, days: t.days, position: t.position, created_at: t.created_at, mins: t.mins };
+    yield { type: 'topic', uid: t.uid, goal_uid: goalUid.get(t.goal_id), title: t.title, days: t.days, position: t.position, created_at: t.created_at, mins: t.mins, join_prev: t.join_prev };
   }
   const habits = await client.query('SELECT id, uid, title, mins, days_mask, start_date, note, active, generated_to, created_at FROM habits ORDER BY id');
   const habitUid = new Map(habits.rows.map((h) => [h.id, h.uid]));
@@ -840,10 +865,11 @@ async function importLine(client, o, ctx) {
       const gid = ctx.goalIds.get(o.goal_uid);
       if (!UID_OK(o.uid) || !gid) return true;
       const r = await client.query(
-        `INSERT INTO topics (uid, goal_id, title, days, position, created_at, mins) VALUES ($1,$2,$3,$4,$5,COALESCE($6, NOW()),$7)
+        `INSERT INTO topics (uid, goal_id, title, days, position, created_at, mins, join_prev) VALUES ($1,$2,$3,$4,$5,COALESCE($6, NOW()),$7,$8)
          ON CONFLICT (uid) DO UPDATE SET uid = EXCLUDED.uid RETURNING id, (xmax = 0) AS fresh`,
         [o.uid, gid, String(o.title || 'Topic').slice(0, 200), Math.min(120, Math.max(1, Number(o.days) || 1)), Number(o.position) || 0, asDate(o.created_at),
-          Number.isInteger(o.mins) && o.mins >= 5 ? Math.min(100000, o.mins) : Math.min(120, Math.max(1, Number(o.days) || 1)) * DEFAULT_DAY_MINS]);
+          Number.isInteger(o.mins) && o.mins >= 5 ? Math.min(100000, o.mins) : Math.min(120, Math.max(1, Number(o.days) || 1)) * DEFAULT_DAY_MINS,
+          o.join_prev === true]);
       ctx.topicIds.set(o.uid, r.rows[0].id);
       if (r.rows[0].fresh) add('topics');
       return true;
