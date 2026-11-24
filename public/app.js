@@ -579,11 +579,15 @@
   }
   const pickMode = (m) => { Theme.setMode(m); paintThemeBtn(); };
   const pickStyle = (st) => { Theme.setStyle(st); paintThemeBtn(); };
+  const pickWall = (w) => { Theme.setWall(w); paintThemeBtn(); };
   function openThemeMenu() {
     const anchor = $('#themeBtn');
     openMenu(anchor, null, [
       { head: 'Style' },
       ...Object.entries(STYLE_LABEL).map(([v, label]) => ({ label: v === 'wood' ? 'Wood shelves' : 'Plain paper', radio: true, checked: Theme.style === v, onSelect: () => pickStyle(v) })),
+      { head: 'Background picture' },
+      { label: 'Show the picture', radio: true, checked: Theme.wall === 'on', onSelect: () => pickWall('on') },
+      { label: 'Plain colour only', radio: true, checked: Theme.wall === 'off', onSelect: () => pickWall('off') },
       { head: 'Light or dark' },
       { label: 'Auto: light by day, dark from 7 pm', radio: true, checked: Theme.mode === 'auto', onSelect: () => pickMode('auto') },
       { label: 'Always light', radio: true, checked: Theme.mode === 'light', onSelect: () => pickMode('light') },
@@ -1255,6 +1259,8 @@
       { group: 'App', icon: 'upload', label: 'Restore from a backup file', run: openBackup },
       { group: 'Theme', icon: 'palette', label: 'Theme: wood shelves', hint: Theme.style === 'wood' ? 'Current' : '', run: () => pickStyle('wood') },
       { group: 'Theme', icon: 'palette', label: 'Theme: plain paper', hint: Theme.style === 'paper' ? 'Current' : '', run: () => pickStyle('paper') },
+      { group: 'Theme', icon: 'palette', label: 'Theme: background picture on', hint: Theme.wall === 'on' ? 'Current' : '', run: () => pickWall('on') },
+      { group: 'Theme', icon: 'palette', label: 'Theme: plain colour, no picture', hint: Theme.wall === 'off' ? 'Current' : '', run: () => pickWall('off') },
       { group: 'Theme', icon: 'sun', label: 'Theme: auto light and dark', hint: Theme.mode === 'auto' ? 'Current' : '', run: () => pickMode('auto') },
       { group: 'Theme', icon: 'sun', label: 'Theme: always light', hint: Theme.mode === 'light' ? 'Current' : '', run: () => pickMode('light') },
       { group: 'Theme', icon: 'moon', label: 'Theme: always dark', hint: Theme.mode === 'dark' ? 'Current' : '', run: () => pickMode('dark') },

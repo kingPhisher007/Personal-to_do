@@ -151,3 +151,13 @@ select {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
+
+/* Background picture: one fixed layer behind everything, with a wash on top so text stays easy to read.
+   Switch it off from the palette button (Background picture) or Ctrl+K. */
+html[data-wall='on']::before {
+  content: ''; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  background: linear-gradient(rgba(18, 12, 8, 0.80), rgba(18, 12, 8, 0.80)), url('/wallpaper.jpg') center / cover no-repeat;
+}
+html[data-wall='on'][data-theme='light']::before {
+  background: linear-gradient(rgba(247, 240, 226, 0.84), rgba(247, 240, 226, 0.84)), url('/wallpaper.jpg') center / cover no-repeat;
+}

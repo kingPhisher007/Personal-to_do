@@ -1,8 +1,8 @@
 /* Service worker: keeps the app shell available offline and handles the Android share sheet. */
-const CACHE = 'clipboard-shell-v8';
+const CACHE = 'clipboard-shell-v9';
 const SHELL = [
   '/', '/tokens.css', '/styles.css', '/workspace.css', '/paper.css', '/theme.js', '/app.js', '/panel.js', '/plan.js', '/diary.js', '/manifest.webmanifest',
-  '/icons/icon.svg',
+  '/icons/icon.svg', '/wallpaper.jpg',
 ];
 
 self.addEventListener('install', (e) => {
